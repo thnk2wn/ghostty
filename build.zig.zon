@@ -101,6 +101,13 @@
             .lazy = true,
         },
 
+        // AI Agent Framework
+        .pocketflow = .{
+            .url = "https://github.com/The-Pocket/PocketFlow-Zig/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "pocketflow-0.2.0-DMo6y3IWAQDBvqw0OtesASCks-2LD-KOeZgI36913USh",
+            .lazy = false,
+        },
+
         // Fonts
         .jetbrains_mono = .{
             .url = "https://deps.files.ghostty.org/JetBrainsMono-2.304.tar.gz",

@@ -632,6 +632,16 @@ extension Ghostty {
             let buffer = UnsafeBufferPointer(start: v.commands, count: v.len)
             return buffer.map { Ghostty.Command(cValue: $0) }
         }
+
+        // MARK: - AI Agent
+
+        var aiAgentEnabled: Bool {
+            guard let config = self.config else { return false }
+            var v = false
+            let key = "ai-agent-enabled"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
     }
 }
 
@@ -721,7 +731,7 @@ extension Ghostty.Config {
 
         static let navigation = SplitPreserveZoom(rawValue: 1 << 0)
     }
-    
+
     enum MacDockDropBehavior: String {
         case new_tab = "new-tab"
         case new_window = "new-window"

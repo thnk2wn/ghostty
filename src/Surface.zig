@@ -35,6 +35,7 @@ const input = @import("input.zig");
 const App = @import("App.zig");
 const internal_os = @import("os/main.zig");
 const inspectorpkg = @import("inspector/main.zig");
+const agentpkg = @import("agent.zig");
 const SurfaceMouse = @import("surface_mouse.zig");
 
 const log = std.log.scoped(.surface);
@@ -122,6 +123,12 @@ io_thr: std.Thread,
 
 /// Terminal inspector
 inspector: ?*inspectorpkg.Inspector = null,
+
+/// AI Agent (if enabled)
+agent: ?*agentpkg.Agent = null,
+
+/// Agent pane focused state
+agent_pane_focused: bool = false,
 
 /// All our sizing information.
 size: rendererpkg.Size,

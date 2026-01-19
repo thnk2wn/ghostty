@@ -17,7 +17,7 @@ protocol TerminalViewDelegate: AnyObject {
 
     /// Perform an action. At the time of writing this is only triggered by the command palette.
     func performAction(_ action: String, on: Ghostty.SurfaceView)
-    
+
     /// A split tree operation
     func performSplitAction(_ action: TerminalSplitOperation)
 }
@@ -32,7 +32,7 @@ protocol TerminalViewModel: ObservableObject {
 
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
-    
+
     /// The update overlay should be visible.
     var updateOverlayIsVisible: Bool { get }
 }
@@ -46,10 +46,13 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
 
     // An optional delegate to receive information about terminal changes.
     weak var delegate: (any TerminalViewDelegate)? = nil
-    
+
     // The most recently focused surface, equal to focusedSurface when
     // it is non-nil.
     @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView> = .init()
+
+    // AI Agent pane view model
+    @StateObject private var agentViewModel = AgentPaneViewModel()
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool
@@ -103,6 +106,21 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         }
                         .frame(idealWidth: lastFocusedSurface.value?.initialSize?.width,
                                idealHeight: lastFocusedSurface.value?.initialSize?.height)
+
+                    // AI Agent pane (shown at bottom if enabled)
+                    if ghostty.config.aiAgentEnabled {
+                        if let surface = lastFocusedSurface.value {
+                            AgentPaneView(
+                                viewModel: agentViewModel,
+                                surfaceView: surface
+                            )
+                        } else {
+                            AgentPaneView(
+                                viewModel: agentViewModel,
+                                surfaceView: nil
+                            )
+                        }
+                    }
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
                 .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])
@@ -116,7 +134,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         self.delegate?.performAction(action, on: surfaceView)
                     }
                 }
-                
+
+                // AI Agent output blocks overlay (disabled - using terminal output instead)
+                // if ghostty.config.aiAgentEnabled {
+                //     AgentOutputOverlay(viewModel: agentViewModel)
+                // }
+
                 // Show update information above all else.
                 if viewModel.updateOverlayIsVisible {
                     UpdateOverlay()
@@ -132,7 +155,7 @@ fileprivate struct UpdateOverlay: View {
         if let appDelegate = NSApp.delegate as? AppDelegate {
             VStack {
                 Spacer()
-                
+
                 HStack {
                     Spacer()
                     UpdatePill(model: appDelegate.updateViewModel)

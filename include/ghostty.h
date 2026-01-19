@@ -1144,6 +1144,42 @@ void ghostty_set_window_background_blur(ghostty_app_t, void*);
 // Benchmark API, if available.
 bool ghostty_benchmark_cli(const char*, const char*);
 
+//-------------------------------------------------------------------
+// AI Agent API
+
+typedef void* ghostty_agent_t;
+
+// Initialize an agent for a surface
+ghostty_agent_t ghostty_agent_new(
+    ghostty_surface_t surface,
+    ghostty_config_t config,
+    const char* workspace_dir
+);
+
+// Free an agent
+void ghostty_agent_free(ghostty_agent_t agent);
+
+// Process user input through the agent
+// Returns true if processing started successfully
+bool ghostty_agent_process_input(
+    ghostty_agent_t agent,
+    const char* input,
+    size_t input_len
+);
+
+// Set agent mode (0=agent, 1=ask, 2=plan)
+bool ghostty_agent_set_mode(ghostty_agent_t agent, int mode);
+
+// Check if agent is currently processing
+bool ghostty_agent_is_processing(ghostty_agent_t agent);
+
+// Write output to terminal (appears in scrollback, not as input)
+bool ghostty_agent_write_output(
+    ghostty_surface_t surface,
+    const char* text,
+    size_t text_len
+);
+
 #ifdef __cplusplus
 }
 #endif

@@ -2959,6 +2959,123 @@ keybind: Keybinds = .{},
 /// Available since: 1.2.0
 @"bell-audio-volume": f64 = 0.5,
 
+/// Enable the AI agent pane at the bottom of terminals. When enabled,
+/// you can use AI assistance directly in your terminal.
+///
+/// The AI agent has three modes:
+///   - `agent`: Autonomous assistant that can execute commands (with approval)
+///   - `ask`: Q&A only, no command execution
+///   - `plan`: Creates detailed plans without executing
+///
+/// Available since: 1.4.0
+@"ai-agent-enabled": bool = false,
+
+/// The default mode for the AI agent pane: "agent", "ask", or "plan".
+///
+/// - `agent`: Can analyze problems and execute commands with your approval
+/// - `ask`: Simple Q&A assistant, never executes commands
+/// - `plan`: Creates detailed step-by-step plans without executing
+///
+/// You can switch modes in the UI if `ai-agent-allow-mode-switch` is enabled.
+///
+/// Available since: 1.4.0
+@"ai-agent-mode": AgentMode = .ask,
+
+/// Allow switching between AI agent modes in the UI. If disabled, the mode
+/// is locked to the value set in `ai-agent-mode`.
+///
+/// Available since: 1.4.0
+@"ai-agent-allow-mode-switch": bool = true,
+
+/// LLM provider to use: "openai", "anthropic", or "ollama".
+///
+/// - `openai`: Use OpenAI's API (GPT-4, GPT-5.2, etc.)
+/// - `anthropic`: Use Anthropic's API (Claude models)
+/// - `ollama`: Use locally running Ollama server
+///
+/// Available since: 1.4.0
+@"ai-agent-provider": []const u8 = "openai",
+
+/// API key for OpenAI or Anthropic. Not needed for Ollama.
+///
+/// You can also set this via environment variables:
+///   - OPENAI_API_KEY for OpenAI
+///   - ANTHROPIC_API_KEY for Anthropic
+///
+/// Environment variables take precedence over this config value.
+///
+/// Available since: 1.4.0
+@"ai-agent-api-key": ?[]const u8 = null,
+
+/// Model to use for the AI agent. The available models depend on your provider:
+///
+/// OpenAI models:
+///   - gpt-4o (recommended)
+///   - gpt-4o-mini (faster, cheaper)
+///   - o1-preview
+///   - o1-mini
+///   - gpt-5.2 (if you have access)
+///   - gpt-5.2-codex (if you have access)
+///
+/// Anthropic models:
+///   - claude-3-5-sonnet-latest (recommended)
+///   - claude-3-opus-latest
+///   - claude-3-haiku-latest
+///
+/// Ollama models:
+///   - llama3
+///   - codellama
+///   - mistral
+///   - (any model you've pulled with `ollama pull`)
+///
+/// If not specified, uses provider defaults.
+///
+/// Available since: 1.4.0
+@"ai-agent-model": ?[]const u8 = null,
+
+/// Ollama server URL. Only used when provider is "ollama".
+///
+/// Available since: 1.4.0
+@"ai-agent-ollama-url": []const u8 = "http://localhost:11434",
+
+/// In agent mode, require approval before executing commands suggested
+/// by the AI. Highly recommended to keep this enabled.
+///
+/// Available since: 1.4.0
+@"ai-agent-require-approval": bool = true,
+
+/// Scope for remembering approval decisions: "workspace" or "global".
+///
+/// - `workspace`: Approval decisions are per-directory
+/// - `global`: Approval decisions apply everywhere
+///
+/// Available since: 1.4.0
+@"ai-agent-approval-scope": ApprovalScope = .workspace,
+
+/// Show the AI's reasoning and thought process in the agent pane.
+/// Only applies when the LLM supports chain-of-thought reasoning.
+///
+/// Available since: 1.4.0
+@"ai-agent-show-reasoning": bool = true,
+
+/// In plan mode, show detailed implementation steps and commands.
+/// If disabled, plans are more high-level.
+///
+/// Available since: 1.4.0
+@"ai-agent-plan-show-details": bool = true,
+
+/// Maximum tokens for LLM responses. Higher values allow longer responses
+/// but cost more.
+///
+/// Available since: 1.4.0
+@"ai-agent-max-tokens": u32 = 2048,
+
+/// Temperature for LLM generation (0.0-2.0). Higher values produce more
+/// creative but potentially less accurate responses.
+///
+/// Available since: 1.4.0
+@"ai-agent-temperature": f32 = 0.7,
+
 /// Control the in-app notifications that Ghostty shows.
 ///
 /// On Linux (GTK), in-app notifications show up as toasts. Toasts appear
@@ -5050,6 +5167,27 @@ pub const LinkPreviews = enum {
     false,
     true,
     osc8,
+};
+
+/// AI agent mode determines how the agent operates
+pub const AgentMode = enum {
+    /// Autonomous agent that can execute commands (with approval)
+    agent,
+    
+    /// Q&A assistant only, no command execution
+    ask,
+    
+    /// Creates detailed plans without executing
+    plan,
+};
+
+/// Scope for approval decision persistence
+pub const ApprovalScope = enum {
+    /// Approval decisions are per-directory
+    workspace,
+    
+    /// Approval decisions apply everywhere
+    global,
 };
 
 /// Color represents a color using RGB.
