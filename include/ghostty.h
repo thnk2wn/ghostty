@@ -1180,6 +1180,30 @@ bool ghostty_agent_write_output(
     size_t text_len
 );
 
+// Get current cursor row Y position
+int ghostty_agent_get_cursor_row(ghostty_surface_t surface);
+
+// Mark a specific row as AI block border
+void ghostty_agent_mark_row(
+    ghostty_surface_t surface,
+    int row_y,
+    unsigned int block_id,
+    bool is_top
+);
+
+// Start an AI block with custom rendering (returns block ID, 0 on failure)
+// mode: 0=agent, 1=ask, 2=plan
+unsigned int ghostty_agent_start_block(
+    ghostty_surface_t surface,
+    int mode
+);
+
+// End an AI block
+void ghostty_agent_end_block(
+    ghostty_surface_t surface,
+    unsigned int block_id
+);
+
 #ifdef __cplusplus
 }
 #endif

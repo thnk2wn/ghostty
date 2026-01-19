@@ -1811,7 +1811,13 @@ pub const Row = packed struct(u64) {
     /// screen.
     dirty: bool = false,
 
-    _padding: u22 = 0,
+    /// AI block ID (0 = none, u16 gives us 65535 blocks max)
+    ai_block_id: u16 = 0,
+    
+    /// AI block part type
+    ai_block_part: AIBlockPart = .none,
+
+    _padding: u4 = 0,
 
     /// Semantic prompt type.
     pub const SemanticPrompt = enum(u3) {
@@ -1834,6 +1840,14 @@ pub const Row = packed struct(u64) {
         pub fn promptOrInput(self: SemanticPrompt) bool {
             return self == .prompt or self == .prompt_continuation or self == .input;
         }
+    };
+
+    /// AI block metadata for custom rendering
+    pub const AIBlockPart = enum(u2) {
+        none = 0,
+        top_border = 1,
+        content = 2,
+        bottom_border = 3,
     };
 
     /// Returns true if this row has any managed memory outside of the

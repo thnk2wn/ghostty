@@ -19,6 +19,7 @@ const point = @import("point.zig");
 const size = @import("size.zig");
 const style = @import("style.zig");
 const hyperlink = @import("hyperlink.zig");
+const AIBlockStorage = @import("AIBlock.zig").AIBlockStorage;
 const Offset = size.Offset;
 const Page = pagepkg.Page;
 const Row = pagepkg.Row;
@@ -71,6 +72,9 @@ kitty_images: if (build_options.kitty_graphics)
     kitty.graphics.ImageStorage
 else
     struct {} = .{},
+
+/// AI block storage for custom rendering
+ai_blocks: AIBlockStorage,
 
 /// Dirty flags for the renderer.
 dirty: Dirty = .{},
@@ -267,6 +271,7 @@ pub fn init(
             .page_row = page_rac.row,
             .page_cell = page_rac.cell,
         },
+        .ai_blocks = AIBlockStorage.init(alloc),
     };
 
     if (comptime build_options.kitty_graphics) {
@@ -286,6 +291,7 @@ pub fn deinit(self: *Screen) void {
     if (comptime build_options.kitty_graphics) {
         self.kitty_images.deinit(self.alloc, self);
     }
+    self.ai_blocks.deinit();
     self.cursor.deinit(self.alloc);
     self.pages.deinit();
 }
@@ -513,6 +519,7 @@ pub fn clone(
         .cursor = cursor,
         .selection = sel,
         .dirty = self.dirty,
+        .ai_blocks = AIBlockStorage.init(alloc),
     };
     result.assertIntegrity();
     return result;

@@ -24,26 +24,56 @@ class AgentBridge {
     /// Send input to the agent backend
     /// Output will appear as styled overlay blocks
     func processInput(_ input: String, mode: AgentMode, model: String, completion: @escaping (Result<AgentResponse, Error>) -> Void) {
-        DispatchQueue.global().async { [weak self] in
+        // Run simulation on main thread
+        DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-
-            // If agent is initialized, use it
-            if let agent = self.agent {
-                let inputData = input.utf8CString
-                let success = inputData.withUnsafeBufferPointer { buffer in
-                    ghostty_agent_process_input(agent, buffer.baseAddress!, input.utf8.count)
-                }
-
-                if !success {
-                    DispatchQueue.main.async {
-                        completion(.failure(AgentError.processingFailed))
-                    }
-                    return
-                }
-            } else {
-                // Fallback: Simulate response
-                self.simulateResponse(input: input, mode: mode, completion: completion)
+            guard let surface = self.surface.surface else { return }
+            
+            let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
+            
+            // Create block and get starting row
+            let blockId = ghostty_agent_start_block(surface, modeInt)
+            guard blockId > 0 else {
+                completion(.failure(AgentError.processingFailed))
+                return
             }
+            
+            // Get row position before top border
+            let topBorderRow = ghostty_agent_get_cursor_row(surface)
+            
+            // Write ONLY spaces - the renderer will draw the underline
+            let spacesLine = String(repeating: " ", count: 80)
+            self.writeToTerminalOutput("\r\n\(spacesLine)")
+            
+            // Mark the border row - renderer will add underline
+            ghostty_agent_mark_row(surface, topBorderRow + 1, blockId, true)
+            
+            // Move to content
+            self.writeToTerminalOutput("\r\n\r\nQuery: \(input)\r\n\r\n")
+            self.writeToTerminalOutput("This is a test AI response!\r\n\r\n")
+            
+            // Get row position before bottom border
+            let bottomBorderRow = ghostty_agent_get_cursor_row(surface)
+            
+            // Write ONLY spaces for bottom border
+            self.writeToTerminalOutput("\r\n\(spacesLine)")
+            
+            // Mark the border row - renderer will add underline
+            ghostty_agent_mark_row(surface, bottomBorderRow + 1, blockId, false)
+            
+            // Move cursor past the border
+            self.writeToTerminalOutput("\r\n")
+            
+            // Send empty command to trigger shell prompt redraw
+            self.writeToTerminalOutput("\r")
+            self.endAIBlock(blockId: blockId)
+            print("📍 Marked row \(bottomBorderRow) as BOTTOM border")
+            
+            completion(.success(AgentResponse(
+                content: "Test response",
+                reasoning: nil,
+                commands: nil
+            )))
         }
     }
 
@@ -51,31 +81,53 @@ class AgentBridge {
         // Simulate processing time
         Thread.sleep(forTimeInterval: 1.0)
 
-        // Create simple block with full-width bars
-        let modeLabel = mode == .agent ? "AGENT" : mode == .ask ? "ASK" : "PLAN"
-        let bgColor = mode == .agent ? "45" : mode == .ask ? "44" : "43" // Magenta, Blue, Yellow bg
-        
-        // Build block line by line with explicit structure
-        var lines: [String] = []
-        lines.append("")
-        lines.append("\u{001B}[\(bgColor);97m \(modeLabel) \u{001B}[K\u{001B}[0m")
-        lines.append("")
-        lines.append("\u{001B}[1mQuery:\u{001B}[0m \(input)")
-        lines.append("")
-        lines.append("This is a simulated response.")
-        lines.append("")
-        lines.append("To complete:")
-        lines.append("• Implement HTTP client")
-        lines.append("• Wire up Zig backend")
-        lines.append("• Add command execution")
-        lines.append("")
-        lines.append("\u{001B}[\(bgColor)m \u{001B}[K\u{001B}[0m")
-        lines.append("")
-        
-        let blockOutput = lines.joined(separator: "\r\n")
+        // All terminal operations must be synchronous and on the calling thread
+        DispatchQueue.main.sync {
+            // DEBUG: Write a visible message first
+            writeToTerminalOutput("\r\n=== AI BLOCK TEST START ===\r\n")
 
-        // Write to terminal output (not input)
-        writeToTerminalOutput(blockOutput)
+            // Create empty line for top border and mark it
+            writeToTerminalOutput(" ") // Write a space to create the row
+            let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
+            let blockId = startAIBlock(modeInt: modeInt) // Mark this row as top border
+            writeToTerminalOutput(" [TOP BORDER ROW - ID:\(blockId)]")
+
+            if blockId == 0 {
+                writeToTerminalOutput("\r\n❌ FAILED TO CREATE BLOCK!\r\n")
+                return
+            }
+
+            // Move to next line after top border
+            writeToTerminalOutput("\r\n")
+
+            // Build block content
+            var lines: [String] = []
+            lines.append("")
+            lines.append("\u{001B}[1mQuery:\u{001B}[0m \(input)")
+            lines.append("")
+            lines.append("This is a simulated response with native AI blocks!")
+            lines.append("")
+            lines.append("Features:")
+            lines.append("  • Native terminal integration")
+            lines.append("  • Scrolls with terminal")
+            lines.append("  • Custom rendering ready")
+            lines.append("")
+
+            let blockOutput = lines.joined(separator: "\r\n")
+
+            // Write block content to terminal
+            writeToTerminalOutput(blockOutput)
+
+            // Create empty line for bottom border
+            writeToTerminalOutput("\r\n ")
+            writeToTerminalOutput("[BOTTOM BORDER ROW]")
+
+            // Mark current row as bottom border
+            endAIBlock(blockId: blockId)
+
+            // Move past the bottom border
+            writeToTerminalOutput("\r\n=== AI BLOCK TEST END ===\r\n")
+        }
 
         let responseText = "AI response (see terminal)"
         let response = AgentResponse(
@@ -89,30 +141,49 @@ class AgentBridge {
         }
     }
 
+    private func startAIBlock(modeInt: Int32) -> UInt32 {
+        // Synchronous call needed for block creation
+        guard let surface = self.surface.surface else {
+            print("❌ No surface available for startAIBlock")
+            return 0
+        }
+        let blockId = ghostty_agent_start_block(surface, modeInt)
+        print("✅ Started AI block with ID: \(blockId), mode: \(modeInt)")
+        return blockId
+    }
+
+    private func endAIBlock(blockId: UInt32) {
+        // Synchronous call needed for proper sequencing
+        guard let surface = self.surface.surface else {
+            print("❌ No surface available for endAIBlock")
+            return
+        }
+        ghostty_agent_end_block(surface, blockId)
+        print("✅ Ended AI block with ID: \(blockId)")
+    }
+
     private func writeToTerminalOutput(_ text: String) {
-        Task { @MainActor in
-            guard let surface = self.surface.surface else { return }
+        // Synchronous write needed for proper sequencing
+        guard let surface = self.surface.surface else { return }
 
-            let len = text.utf8CString.count
-            guard len > 0 else { return }
+        let len = text.utf8CString.count
+        guard len > 0 else { return }
 
-            text.withCString { ptr in
-                _ = ghostty_agent_write_output(surface, ptr, Int(len - 1))
-            }
+        text.withCString { ptr in
+            _ = ghostty_agent_write_output(surface, ptr, Int(len - 1))
         }
     }
+}
 
-    struct AgentResponse {
-        let content: String
-        let reasoning: String?
-        let commands: [String]?
-    }
+// Response structure
+struct AgentResponse {
+    let content: String
+    let reasoning: String?
+    let commands: [String]?
+}
 
-    enum AgentError: Error {
-        case notInitialized
-        case invalidApiKey
-        case networkError
-        case providerError(String)
-        case processingFailed
-    }
+// Error types
+enum AgentError: Error {
+    case processingFailed
+    case invalidInput
 }

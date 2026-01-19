@@ -2,6 +2,8 @@ const std = @import("std");
 const Agent = @import("Agent.zig");
 const Config = @import("../config.zig").Config;
 const Surface = @import("../Surface.zig");
+const terminal = @import("../terminal/main.zig");
+const AIBlock = terminal.AIBlock;
 
 /// C API for agent integration
 /// These functions are called from Swift/Objective-C
@@ -110,4 +112,107 @@ export fn ghostty_agent_write_output(
     // Write to terminal output (processOutput expects data from PTY)
     surface.io.processOutput(output);
     return true;
+}
+
+/// Get current cursor row Y position
+export fn ghostty_agent_get_cursor_row(surface_ptr: *anyopaque) c_int {
+    const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
+    surface.renderer_state.mutex.lock();
+    defer surface.renderer_state.mutex.unlock();
+    return @intCast(surface.io.terminal.screens.active.*.cursor.y);
+}
+
+/// Mark a specific row as AI block border
+/// row_y: absolute row position
+/// block_id: block ID to assign
+/// is_top: true for top border, false for bottom border
+export fn ghostty_agent_mark_row(
+    surface_ptr: *anyopaque,
+    row_y: c_int,
+    block_id: u16,
+    is_top: bool,
+) void {
+    const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
+    
+    surface.renderer_state.mutex.lock();
+    defer surface.renderer_state.mutex.unlock();
+    
+    const screen = surface.io.terminal.screens.active;
+    
+    // Find the row at this Y position
+    const target_y: usize = @intCast(row_y);
+    if (target_y != screen.*.cursor.y) {
+        std.debug.print("⚠️  Warning: marking row {} but cursor is at {}\n", .{target_y, screen.*.cursor.y});
+    }
+    
+    // Mark the current cursor row (should be at target_y)
+    screen.*.cursor.page_row.*.ai_block_id = block_id;
+    screen.*.cursor.page_row.*.ai_block_part = if (is_top) .top_border else .bottom_border;
+    screen.*.cursor.page_row.*.dirty = true;
+    screen.*.cursor.page_pin.node.data.dirty = true;
+    
+    std.debug.print("✅ Marked row {} as {s} border for block {}\n", .{
+        row_y,
+        if (is_top) "TOP" else "BOTTOM",
+        block_id,
+    });
+}
+
+/// Start an AI block (returns block ID, or 0 on failure)
+/// mode: 0=agent, 1=ask, 2=plan
+export fn ghostty_agent_start_block(
+    surface_ptr: *anyopaque,
+    mode: c_int,
+) u16 {
+    const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
+    
+    const ai_mode: AIBlock.AIBlock.Mode = switch (mode) {
+        0 => .agent,
+        1 => .ask,
+        2 => .plan,
+        else => return 0,
+    };
+    
+    // Lock terminal state
+    surface.renderer_state.mutex.lock();
+    defer surface.renderer_state.mutex.unlock();
+    
+    // Get current row
+    const screen = surface.io.terminal.screens.active;
+    const row_y = screen.*.cursor.y;
+    
+    // Create block
+    const block_id = screen.*.ai_blocks.createBlock(ai_mode, row_y) catch return 0;
+    
+    std.debug.print("✅ Created block {} at row {} with mode {}\n", .{ block_id, row_y, @intFromEnum(ai_mode) });
+    
+    return block_id;
+}
+
+/// End an AI block
+export fn ghostty_agent_end_block(
+    surface_ptr: *anyopaque,
+    block_id: u16,
+) void {
+    const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
+    
+    // Lock terminal state
+    surface.renderer_state.mutex.lock();
+    defer surface.renderer_state.mutex.unlock();
+    
+    // Get current row
+    const screen = surface.io.terminal.screens.active;
+    const row_y = screen.*.cursor.y;
+    
+    // End block
+    screen.*.ai_blocks.endBlock(block_id, row_y);
+    
+    // Mark current row as bottom border and set dirty
+    screen.*.cursor.page_row.*.ai_block_id = block_id;
+    screen.*.cursor.page_row.*.ai_block_part = .bottom_border;
+    screen.*.cursor.page_row.*.dirty = true;
+    screen.*.cursor.page_pin.node.data.dirty = true;
+    
+    std.debug.print("✅ C API: Ended block {} at row {}\n", .{ block_id, row_y });
+    std.debug.print("   Row metadata: id={}, part={}\n", .{ screen.*.cursor.page_row.*.ai_block_id, screen.*.cursor.page_row.*.ai_block_part });
 }

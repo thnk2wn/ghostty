@@ -2685,8 +2685,39 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         .bold = self.config.bold_color,
                     });
 
+                    // Check if this row is an AI block border and override background
+                    const ai_border_bg: ?terminal.color.RGB = if (row.ai_block_id > 0) blk: {
+                        // Debug: Log when we detect AI blocks
+                        if (row.ai_block_part == .top_border or row.ai_block_part == .bottom_border) {
+                            if (x == 0) { // Only log once per row
+                                std.debug.print("🎨 Row {}: AI border! ID={}, part={}, cells_len={}, x={}\n", .{ 
+                                    y, row.ai_block_id, row.ai_block_part, cells_len, x
+                                });
+                            }
+                        }
+                        
+                        break :blk switch (row.ai_block_part) {
+                            .top_border, .bottom_border => blk2: {
+                                // Determine border color by block ID's mode
+                                // For now, use block ID mod 3 to cycle colors
+                                // TODO: Look up actual block mode from terminal state
+                                // Use subtle, consistent colors based on mode
+                                // Block ID 1 = Ask mode (user is testing with Ask)
+                                const color_idx = row.ai_block_id % 3;
+                                break :blk2 switch (color_idx) {
+                                    0 => terminal.color.RGB{ .r = 100, .g = 80, .b = 150 }, // Subtle Purple (Agent)
+                                    1 => terminal.color.RGB{ .r = 60, .g = 120, .b = 180 }, // Subtle Blue (Ask)
+                                    else => terminal.color.RGB{ .r = 180, .g = 130, .b = 60 }, // Subtle Orange (Plan)
+                                };
+                            },
+                            .content, .none => null,
+                        };
+                    } else null;
+
                     // The final background color for the cell.
-                    const bg = switch (selected) {
+                    const bg = if (ai_border_bg) |ai_bg|
+                        ai_bg
+                    else switch (selected) {
                         // If we have an explicit selection background color
                         // specified in the config, use that.
                         //
@@ -2775,6 +2806,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         const bg_alpha: u8 = bg_alpha: {
                             const default: u8 = 255;
 
+                            // AI border cells should be TRANSPARENT (only underline visible)
+                            if (row.ai_block_id > 0 and (row.ai_block_part == .top_border or row.ai_block_part == .bottom_border)) {
+                                break :bg_alpha 0;
+                            }
+
                             // Cells that are selected should be fully opaque.
                             if (selected != .false) break :bg_alpha default;
 
@@ -2800,6 +2836,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                         self.cells.bgCell(y, x).* = .{
                             rgb.r, rgb.g, rgb.b, bg_alpha,
                         };
+                        
+                        // Debug: Log background color for AI border cells
+                        if (row.ai_block_id > 0 and (row.ai_block_part == .top_border or row.ai_block_part == .bottom_border) and x < 5) {
+                            std.debug.print("  Cell[{},{}]: rgb=({},{},{}), alpha={}, ai_bg={any}\n", .{
+                                x, y, rgb.r, rgb.g, rgb.b, bg_alpha, ai_border_bg
+                            });
+                        }
                     }
 
                     // If the invisible flag is set on this cell then we
@@ -2845,6 +2888,23 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                             .{ x, y, err },
                         );
                     };
+                    
+                    // Draw thin line for AI block borders
+                    if (row.ai_block_id > 0 and (row.ai_block_part == .top_border or row.ai_block_part == .bottom_border)) {
+                        const color_idx = row.ai_block_id % 3;
+                        const border_color = switch (color_idx) {
+                            0 => terminal.color.RGB{ .r = 138, .g = 96, .b = 230 }, // Purple (Agent)
+                            1 => terminal.color.RGB{ .r = 66, .g = 153, .b = 225 }, // Blue (Ask)
+                            else => terminal.color.RGB{ .r = 255, .g = 167, .b = 38 }, // Orange (Plan)
+                        };
+                        self.addUnderline(
+                            @intCast(x),
+                            @intCast(y),
+                            .single,
+                            border_color,
+                            255, // Fully opaque
+                        ) catch {};
+                    }
 
                     if (style.flags.overline) self.addOverline(@intCast(x), @intCast(y), fg, alpha) catch |err| {
                         log.warn(
