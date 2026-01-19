@@ -91,8 +91,8 @@ class MarkdownTerminalRenderer {
         // If we're in a code block, close it
         if inCodeBlock {
             inCodeBlock = false
-            let closeLine = "\(ANSI.fg(ANSI.codeBorder))\(Box.bottomLeft)\(Box.horizontal)\(Box.horizontal)\(ANSI.reset)"
-            let codeLine = "\(ANSI.fg(ANSI.codeBorder))\(Box.vertical)\(ANSI.reset) \(ANSI.dim)\(remaining)\(ANSI.reset)"
+            let closeLine = "\(ANSI.dim)\(String(repeating: "─", count: 120))\(ANSI.reset)"
+            let codeLine = "\(ANSI.dim)\(remaining)\(ANSI.reset)"
             return codeLine + "\r\n" + closeLine + "\r\n"
         }
 
@@ -101,98 +101,101 @@ class MarkdownTerminalRenderer {
 
     private func processLine(_ line: String) -> String {
         var prefix = ""
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
 
         // Handle code block state
-        if line.hasPrefix("```") {
+        if trimmedLine.hasPrefix("```") {
             if inCodeBlock {
                 // End of code block - output closing border
                 inCodeBlock = false
                 lastLineType = .codeBlockEnd
-                return "\(ANSI.fg(ANSI.codeBorder))\(Box.bottomLeft)\(Box.horizontal)\(Box.horizontal)\(ANSI.reset)"
+                return "\(ANSI.dim)\(String(repeating: "─", count: 120))\(ANSI.reset)"
             } else {
                 // Start of code block - add spacing before
                 if lastLineType != .empty {
                     prefix = "\r\n"
                 }
                 inCodeBlock = true
-                codeBlockLanguage = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                let label = codeBlockLanguage.isEmpty ? "code" : codeBlockLanguage
+                codeBlockLanguage = String(trimmedLine.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                let label = codeBlockLanguage.isEmpty ? "" : "\(codeBlockLanguage) "
+                let labelLen = label.count
+                let dashCount = 120 - labelLen
                 lastLineType = .codeBlockStart
-                return prefix + "\(ANSI.fg(ANSI.codeBorder))\(Box.topLeft)\(Box.horizontal)\(Box.horizontal) \(label) \(Box.horizontal)\(Box.horizontal)\(ANSI.reset)"
+                return prefix + "\(ANSI.dim)\(label)\(String(repeating: "─", count: dashCount))\(ANSI.reset)"
             }
         }
 
         if inCodeBlock {
-            // Output code line with left border
+            // Output code line without border - just dimmed
             lastLineType = .codeBlockContent
-            return "\(ANSI.fg(ANSI.codeBorder))\(Box.vertical)\(ANSI.reset) \(ANSI.dim)\(line)\(ANSI.reset)"
+            return "\(ANSI.dim)\(line)\(ANSI.reset)"
         }
 
         // Empty line
-        if line.trimmingCharacters(in: .whitespaces).isEmpty {
+        if trimmedLine.isEmpty {
             lastLineType = .empty
             return ""
         }
 
         // Headers - add spacing before (check longer prefixes first)
-        if line.hasPrefix("#### ") {
+        if trimmedLine.hasPrefix("#### ") {
             if lastLineType != .empty {
                 prefix = "\r\n"
             }
             lastLineType = .header
-            return prefix + renderHeader(String(line.dropFirst(5)), level: 4)
+            return prefix + renderHeader(String(trimmedLine.dropFirst(5)), level: 4)
         }
-        if line.hasPrefix("### ") {
+        if trimmedLine.hasPrefix("### ") {
             if lastLineType != .empty {
                 prefix = "\r\n"
             }
             lastLineType = .header
-            return prefix + renderHeader(String(line.dropFirst(4)), level: 3)
+            return prefix + renderHeader(String(trimmedLine.dropFirst(4)), level: 3)
         }
-        if line.hasPrefix("## ") {
+        if trimmedLine.hasPrefix("## ") {
             if lastLineType != .empty {
                 prefix = "\r\n"
             }
             lastLineType = .header
-            return prefix + renderHeader(String(line.dropFirst(3)), level: 2)
+            return prefix + renderHeader(String(trimmedLine.dropFirst(3)), level: 2)
         }
-        if line.hasPrefix("# ") {
+        if trimmedLine.hasPrefix("# ") {
             if lastLineType != .empty {
                 prefix = "\r\n"
             }
             lastLineType = .header
-            return prefix + renderHeader(String(line.dropFirst(2)), level: 1)
+            return prefix + renderHeader(String(trimmedLine.dropFirst(2)), level: 1)
         }
 
         // Block quotes
-        if line.hasPrefix("> ") {
+        if trimmedLine.hasPrefix("> ") {
             if lastLineType != .empty && lastLineType != .blockQuote {
                 prefix = "\r\n"
             }
             lastLineType = .blockQuote
-            return prefix + renderBlockQuote(String(line.dropFirst(2)))
+            return prefix + renderBlockQuote(String(trimmedLine.dropFirst(2)))
         }
-        if line == ">" {
+        if trimmedLine == ">" {
             lastLineType = .blockQuote
             return renderBlockQuote("")
         }
 
         // Unordered lists
-        if line.hasPrefix("- ") || line.hasPrefix("* ") {
+        if trimmedLine.hasPrefix("- ") || trimmedLine.hasPrefix("* ") {
             if lastLineType != .empty && lastLineType != .list {
                 prefix = "\r\n"
             }
             lastLineType = .list
-            return prefix + renderListItem(String(line.dropFirst(2)), ordered: false)
+            return prefix + renderListItem(String(trimmedLine.dropFirst(2)), ordered: false)
         }
 
         // Ordered lists
-        if let match = line.range(of: #"^(\d+)\.\s+"#, options: .regularExpression) {
+        if let match = trimmedLine.range(of: #"^(\d+)\.\s+"#, options: .regularExpression) {
             if lastLineType != .empty && lastLineType != .list {
                 prefix = "\r\n"
             }
-            let content = String(line[match.upperBound...])
-            let numStr = line[line.startIndex..<match.upperBound]
+            let content = String(trimmedLine[match.upperBound...])
+            let numStr = trimmedLine[trimmedLine.startIndex..<match.upperBound]
                 .trimmingCharacters(in: .whitespaces)
                 .replacingOccurrences(of: ".", with: "")
             lastLineType = .list
