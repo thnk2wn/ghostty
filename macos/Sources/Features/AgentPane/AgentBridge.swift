@@ -6,13 +6,11 @@ class AgentBridge {
     private let surface: Ghostty.SurfaceView
     private weak var viewModel: AgentPaneViewModel?
     private var agent: ghostty_agent_t?
+    private let aiClient = AIClient()
 
     init(surface: Ghostty.SurfaceView, viewModel: AgentPaneViewModel) {
         self.surface = surface
         self.viewModel = viewModel
-
-        // Initialize agent from Zig backend
-        // Note: This will fail until the C API is fully wired up
     }
 
     deinit {
@@ -21,145 +19,217 @@ class AgentBridge {
         }
     }
 
-    /// Send input to the agent backend
-    /// Output will appear as styled overlay blocks
+    /// Send input to the agent backend with real AI processing
     func processInput(_ input: String, mode: AgentMode, model: String, completion: @escaping (Result<AgentResponse, Error>) -> Void) {
-        // Run simulation on main thread
-        DispatchQueue.main.async { [weak self] in
+        Task {
+            do {
+                let context = await self.gatherTerminalContext()
+                let systemPrompt = AIPrompts.systemPrompt(for: mode, terminalContext: context)
+                
+                let messages = [
+                    AIMessage(role: "system", content: systemPrompt),
+                    AIMessage(role: "user", content: input)
+                ]
+                
+                let request = AIRequest(
+                    messages: messages,
+                    model: model,
+                    stream: true,
+                    temperature: 0.7
+                )
+                
+                await MainActor.run {
+                    self.startOutputBlock(mode: mode, query: input)
+                }
+                
+                var accumulatedContent = ""
+                
+                self.aiClient.sendRequest(request, streamHandler: { [weak self] chunk in
+                    guard let self = self else { return }
+                    accumulatedContent += chunk
+                    
+                    Task { @MainActor in
+                        self.appendToCurrentBlock(chunk)
+                    }
+                }, completion: { [weak self] result in
+                    guard let self = self else { return }
+                    
+                    Task { @MainActor in
+                        switch result {
+                        case .success(let response):
+                            let finalContent = response.content.isEmpty ? accumulatedContent : response.content
+                            
+                            await self.endOutputBlock()
+                            
+                            let commands: [String]?
+                            if mode == .agent {
+                                commands = self.extractCommands(from: finalContent)
+                            } else {
+                                commands = nil
+                            }
+                            
+                            let agentResponse = AgentResponse(
+                                content: finalContent,
+                                reasoning: nil,
+                                commands: commands
+                            )
+                            completion(.success(agentResponse))
+                            
+                        case .failure(let error):
+                            await self.endOutputBlock()
+                            let errorMessage = "\n\n❌ Error: \(error.localizedDescription)"
+                            self.appendToCurrentBlock(errorMessage)
+                            completion(.failure(error))
+                        }
+                    }
+                })
+                
+            } catch {
+                await MainActor.run {
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+    
+    private func gatherTerminalContext() async -> TerminalContext? {
+        return await MainActor.run {
+            guard let surface = self.surface.surface else { return nil }
+            
+            let cwd = self.getCurrentWorkingDirectory()
+            let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+            
+            return TerminalContext(
+                workingDirectory: cwd,
+                shell: shell,
+                recentCommands: [],
+                visibleOutput: nil
+            )
+        }
+    }
+    
+    private func getCurrentWorkingDirectory() -> String? {
+        return FileManager.default.currentDirectoryPath
+    }
+    
+    private func extractCommands(from content: String) -> [String] {
+        var commands: [String] = []
+        let pattern = "```(?:bash|sh|shell)\\s*\\n([^`]+)```"
+        
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
+            return commands
+        }
+        
+        let nsContent = content as NSString
+        let matches = regex.matches(in: content, options: [], range: NSRange(location: 0, length: nsContent.length))
+        
+        for match in matches {
+            if match.numberOfRanges > 1 {
+                let commandRange = match.range(at: 1)
+                let commandBlock = nsContent.substring(with: commandRange)
+                
+                let lines = commandBlock.components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+                
+                commands.append(contentsOf: lines)
+            }
+        }
+        
+        return commands
+    }
+    
+    func executeCommand(_ command: String, completion: @escaping (Result<CommandResult, Error>) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            guard let surface = self.surface.surface else { return }
             
-            let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-c", command]
             
-            // Create block and get starting row
-            let blockId = ghostty_agent_start_block(surface, modeInt)
-            guard blockId > 0 else {
-                completion(.failure(AgentError.processingFailed))
-                return
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+            
+            do {
+                try process.run()
+                process.waitUntilExit()
+                
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                let output = String(data: outputData, encoding: .utf8) ?? ""
+                let error = String(data: errorData, encoding: .utf8) ?? ""
+                
+                let result = CommandResult(
+                    output: output,
+                    error: error,
+                    exitCode: Int(process.terminationStatus)
+                )
+                
+                Task { @MainActor in
+                    self.appendToCurrentBlock("\n\n```\n$ \(command)\n\(output)\(error)```\n")
+                }
+                
+                completion(.success(result))
+                
+            } catch {
+                completion(.failure(error))
             }
-            
-            // Get row position before top border
-            let topBorderRow = ghostty_agent_get_cursor_row(surface)
-            
-            // Write ONLY spaces - the renderer will draw the underline
-            let spacesLine = String(repeating: " ", count: 80)
-            self.writeToTerminalOutput("\r\n\(spacesLine)")
-            
-            // Mark the border row - renderer will add underline
-            ghostty_agent_mark_row(surface, topBorderRow + 1, blockId, true)
-            
-            // Move to content
-            self.writeToTerminalOutput("\r\n\r\nQuery: \(input)\r\n\r\n")
-            self.writeToTerminalOutput("This is a test AI response!\r\n\r\n")
-            
-            // Get row position before bottom border
-            let bottomBorderRow = ghostty_agent_get_cursor_row(surface)
-            
-            // Write ONLY spaces for bottom border
-            self.writeToTerminalOutput("\r\n\(spacesLine)")
-            
-            // Mark the border row - renderer will add underline
-            ghostty_agent_mark_row(surface, bottomBorderRow + 1, blockId, false)
-            
-            // Move cursor past the border
-            self.writeToTerminalOutput("\r\n")
-            
-            // Send empty command to trigger shell prompt redraw
-            self.writeToTerminalOutput("\r")
-            self.endAIBlock(blockId: blockId)
-            print("📍 Marked row \(bottomBorderRow) as BOTTOM border")
-            
-            completion(.success(AgentResponse(
-                content: "Test response",
-                reasoning: nil,
-                commands: nil
-            )))
         }
     }
 
-    private func simulateResponse(input: String, mode: AgentMode, completion: @escaping (Result<AgentResponse, Error>) -> Void) {
-        // Simulate processing time
-        Thread.sleep(forTimeInterval: 1.0)
-
-        // All terminal operations must be synchronous and on the calling thread
-        DispatchQueue.main.sync {
-            // DEBUG: Write a visible message first
-            writeToTerminalOutput("\r\n=== AI BLOCK TEST START ===\r\n")
-
-            // Create empty line for top border and mark it
-            writeToTerminalOutput(" ") // Write a space to create the row
-            let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
-            let blockId = startAIBlock(modeInt: modeInt) // Mark this row as top border
-            writeToTerminalOutput(" [TOP BORDER ROW - ID:\(blockId)]")
-
-            if blockId == 0 {
-                writeToTerminalOutput("\r\n❌ FAILED TO CREATE BLOCK!\r\n")
-                return
-            }
-
-            // Move to next line after top border
-            writeToTerminalOutput("\r\n")
-
-            // Build block content
-            var lines: [String] = []
-            lines.append("")
-            lines.append("\u{001B}[1mQuery:\u{001B}[0m \(input)")
-            lines.append("")
-            lines.append("This is a simulated response with native AI blocks!")
-            lines.append("")
-            lines.append("Features:")
-            lines.append("  • Native terminal integration")
-            lines.append("  • Scrolls with terminal")
-            lines.append("  • Custom rendering ready")
-            lines.append("")
-
-            let blockOutput = lines.joined(separator: "\r\n")
-
-            // Write block content to terminal
-            writeToTerminalOutput(blockOutput)
-
-            // Create empty line for bottom border
-            writeToTerminalOutput("\r\n ")
-            writeToTerminalOutput("[BOTTOM BORDER ROW]")
-
-            // Mark current row as bottom border
-            endAIBlock(blockId: blockId)
-
-            // Move past the bottom border
-            writeToTerminalOutput("\r\n=== AI BLOCK TEST END ===\r\n")
-        }
-
-        let responseText = "AI response (see terminal)"
-        let response = AgentResponse(
-            content: responseText,
-            reasoning: nil,
-            commands: mode == .agent ? ["echo 'Example command'"] : nil
-        )
-
-        DispatchQueue.main.async {
-            completion(.success(response))
-        }
-    }
-
-    private func startAIBlock(modeInt: Int32) -> UInt32 {
-        // Synchronous call needed for block creation
-        guard let surface = self.surface.surface else {
-            print("❌ No surface available for startAIBlock")
-            return 0
-        }
+    private var currentBlockId: UInt32 = 0
+    
+    @MainActor
+    private func startOutputBlock(mode: AgentMode, query: String) {
+        guard let surface = self.surface.surface else { return }
+        
+        let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
+        
         let blockId = ghostty_agent_start_block(surface, modeInt)
-        print("✅ Started AI block with ID: \(blockId), mode: \(modeInt)")
-        return blockId
+        guard blockId > 0 else { return }
+        
+        self.currentBlockId = blockId
+        
+        let topBorderRow = ghostty_agent_get_cursor_row(surface)
+        let spacesLine = String(repeating: " ", count: 80)
+        
+        self.writeToTerminalOutput("\r\n\(spacesLine)")
+        ghostty_agent_mark_row(surface, topBorderRow + 1, blockId, true)
+        
+        self.writeToTerminalOutput("\r\n")
+        
+        let modeIcon = mode == .agent ? "✨" : mode == .ask ? "❓" : "📋"
+        self.writeToTerminalOutput("\(modeIcon) \u{001B}[1m\(mode.rawValue) Mode\u{001B}[0m\r\n\r\n")
+        self.writeToTerminalOutput("\u{001B}[1mQuery:\u{001B}[0m \(query)\r\n\r\n")
+        self.writeToTerminalOutput("\u{001B}[1mResponse:\u{001B}[0m\r\n")
     }
-
-    private func endAIBlock(blockId: UInt32) {
-        // Synchronous call needed for proper sequencing
-        guard let surface = self.surface.surface else {
-            print("❌ No surface available for endAIBlock")
-            return
-        }
-        ghostty_agent_end_block(surface, blockId)
-        print("✅ Ended AI block with ID: \(blockId)")
+    
+    @MainActor
+    private func appendToCurrentBlock(_ text: String) {
+        guard currentBlockId > 0 else { return }
+        
+        let formattedText = text.replacingOccurrences(of: "\n", with: "\r\n")
+        self.writeToTerminalOutput(formattedText)
+    }
+    
+    @MainActor
+    private func endOutputBlock() async {
+        guard let surface = self.surface.surface else { return }
+        guard currentBlockId > 0 else { return }
+        
+        let bottomBorderRow = ghostty_agent_get_cursor_row(surface)
+        let spacesLine = String(repeating: " ", count: 80)
+        
+        self.writeToTerminalOutput("\r\n\r\n\(spacesLine)")
+        ghostty_agent_mark_row(surface, bottomBorderRow + 1, currentBlockId, false)
+        
+        self.writeToTerminalOutput("\r\n")
+        
+        ghostty_agent_end_block(surface, currentBlockId)
+        currentBlockId = 0
     }
 
     private func writeToTerminalOutput(_ text: String) {
@@ -175,15 +245,22 @@ class AgentBridge {
     }
 }
 
-// Response structure
+// Response structures
 struct AgentResponse {
     let content: String
     let reasoning: String?
     let commands: [String]?
 }
 
+struct CommandResult {
+    let output: String
+    let error: String
+    let exitCode: Int
+}
+
 // Error types
 enum AgentError: Error {
     case processingFailed
     case invalidInput
+    case missingAPIKey
 }

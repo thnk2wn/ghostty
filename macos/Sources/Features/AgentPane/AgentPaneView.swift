@@ -38,6 +38,21 @@ struct AgentPaneView: View {
                 .padding(.top, 6)
             }
 
+            // API Key warning (shows if missing)
+            if !viewModel.hasAPIKey {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Missing API key - Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.1))
+            }
+
             // Main control bar
             HStack(spacing: 12) {
                 // Mode selector
@@ -117,7 +132,7 @@ struct AgentPaneView: View {
             .padding()
         }
         .background(Color(NSColor.controlBackgroundColor))
-        .frame(height: viewModel.pendingCommands.isEmpty ? 80 : 180)
+        .frame(height: calculateHeight())
         .onAppear {
             inputFocused = true
             tryConfigureSurface()
@@ -125,6 +140,20 @@ struct AgentPaneView: View {
         .onChange(of: surfaceView?.id) { _ in
             tryConfigureSurface()
         }
+    }
+    
+    private func calculateHeight() -> CGFloat {
+        var height: CGFloat = 80
+        
+        if !viewModel.hasAPIKey {
+            height += 30
+        }
+        
+        if !viewModel.pendingCommands.isEmpty {
+            height += 100
+        }
+        
+        return height
     }
 
     private func tryConfigureSurface() {

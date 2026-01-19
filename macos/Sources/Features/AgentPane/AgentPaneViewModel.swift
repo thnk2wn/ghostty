@@ -50,21 +50,22 @@ class AgentPaneViewModel: ObservableObject {
     @Published var pendingCommands: [String] = []
     @Published var selectedModel: String = "gpt-4o-mini"
     @Published var outputBlocks: [AgentOutputMessage] = []
+    @Published var hasAPIKey: Bool = false
 
     private var bridge: AgentBridge?
 
-    let availableModels: [String] = [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "o1-preview",
-        "o1-mini",
-        "gpt-5.2",
-        "gpt-5.2-codex",
-        "claude-3-5-sonnet-latest",
-        "claude-3-opus-latest",
-        "llama3",
-        "codellama"
-    ]
+    var availableModels: [String] {
+        return AgentConfig.availableModels()
+    }
+    
+    init() {
+        loadConfig()
+        checkAPIKeys()
+    }
+    
+    private func checkAPIKeys() {
+        hasAPIKey = AgentConfig.hasValidAPIKey(for: selectedModel)
+    }
 
     func configure(surface: Ghostty.SurfaceView) {
         // Only configure once
@@ -75,10 +76,22 @@ class AgentPaneViewModel: ObservableObject {
     func submitInput(_ input: String) {
         guard !input.isEmpty else { return }
         guard bridge != nil else { return }
+        
+        checkAPIKeys()
+        guard hasAPIKey else {
+            let errorBlock = AgentOutputMessage(
+                mode: mode,
+                query: input,
+                content: "❌ Missing API key. Please set the appropriate environment variable:\n\n```bash\nexport OPENAI_API_KEY=\"your-key\"\n# or\nexport ANTHROPIC_API_KEY=\"your-key\"\n```\n\nThen restart Ghostty.",
+                commands: nil,
+                isProcessing: false
+            )
+            outputBlocks.append(errorBlock)
+            return
+        }
 
         isProcessing = true
 
-        // Add processing block
         let processingBlock = AgentOutputMessage(
             mode: mode,
             query: input,
@@ -88,18 +101,15 @@ class AgentPaneViewModel: ObservableObject {
         )
         outputBlocks.append(processingBlock)
 
-        // Process through agent
         bridge?.processInput(input, mode: mode, model: selectedModel) { [weak self] result in
             guard let self = self else { return }
 
             self.isProcessing = false
 
-            // Remove processing block
             self.outputBlocks.removeAll { $0.id == processingBlock.id }
 
             switch result {
             case .success(let response):
-                // Add response block
                 let responseBlock = AgentOutputMessage(
                     mode: self.mode,
                     query: input,
@@ -109,7 +119,6 @@ class AgentPaneViewModel: ObservableObject {
                 )
                 self.outputBlocks.append(responseBlock)
 
-                // If there are commands and we need approval
                 if let commands = response.commands, !commands.isEmpty && self.mode == .agent {
                     self.pendingCommands = commands
                 }
@@ -118,21 +127,78 @@ class AgentPaneViewModel: ObservableObject {
                 let errorBlock = AgentOutputMessage(
                     mode: self.mode,
                     query: input,
-                    content: "Error: \(error.localizedDescription)",
+                    content: "❌ Error: \(error.localizedDescription)",
                     commands: nil,
                     isProcessing: false
                 )
                 self.outputBlocks.append(errorBlock)
             }
         }
+        
+        saveConfig()
     }
 
     func executeCommands() {
-        // TODO: Execute command via bridge
+        guard !pendingCommands.isEmpty else { return }
+        
+        let commandsToExecute = pendingCommands
         pendingCommands.removeAll()
+        
+        isProcessing = true
+        
+        var executedCount = 0
+        let totalCommands = commandsToExecute.count
+        
+        func executeNext() {
+            guard executedCount < totalCommands else {
+                isProcessing = false
+                return
+            }
+            
+            let command = commandsToExecute[executedCount]
+            executedCount += 1
+            
+            bridge?.executeCommand(command) { [weak self] result in
+                guard let self = self else { return }
+                
+                switch result {
+                case .success(let cmdResult):
+                    let message = AgentOutputMessage(
+                        mode: .agent,
+                        query: nil,
+                        content: "Executed: `\(command)`\n\nOutput:\n```\n\(cmdResult.output)\(cmdResult.error)```\n\nExit code: \(cmdResult.exitCode)",
+                        commands: nil,
+                        isProcessing: false
+                    )
+                    self.outputBlocks.append(message)
+                    
+                case .failure(let error):
+                    let message = AgentOutputMessage(
+                        mode: .agent,
+                        query: nil,
+                        content: "Failed to execute: `\(command)`\n\nError: \(error.localizedDescription)",
+                        commands: nil,
+                        isProcessing: false
+                    )
+                    self.outputBlocks.append(message)
+                }
+                
+                executeNext()
+            }
+        }
+        
+        executeNext()
     }
 
     func rejectCommands() {
+        let message = AgentOutputMessage(
+            mode: .agent,
+            query: nil,
+            content: "❌ Commands rejected by user",
+            commands: nil,
+            isProcessing: false
+        )
+        outputBlocks.append(message)
         pendingCommands.removeAll()
     }
 
