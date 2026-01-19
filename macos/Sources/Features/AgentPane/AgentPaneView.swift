@@ -12,21 +12,6 @@ struct AgentPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Processing indicator (shows at top when thinking)
-            if viewModel.isProcessing {
-                HStack {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                    Text("Thinking...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .background(viewModel.mode.color.opacity(0.05))
-            }
-
             // Approval dialog (shows at top when commands need approval)
             if !viewModel.pendingCommands.isEmpty {
                 ApprovalView(
@@ -141,18 +126,18 @@ struct AgentPaneView: View {
             tryConfigureSurface()
         }
     }
-    
+
     private func calculateHeight() -> CGFloat {
         var height: CGFloat = 80
-        
+
         if !viewModel.hasAPIKey {
             height += 30
         }
-        
+
         if !viewModel.pendingCommands.isEmpty {
             height += 100
         }
-        
+
         return height
     }
 

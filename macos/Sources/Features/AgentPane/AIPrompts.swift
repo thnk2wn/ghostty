@@ -3,7 +3,7 @@ import Foundation
 struct AIPrompts {
     static func systemPrompt(for mode: AgentMode, terminalContext: TerminalContext?) -> String {
         let baseContext = buildContextSection(terminalContext)
-        
+
         switch mode {
         case .agent:
             return agentModePrompt + baseContext
@@ -13,37 +13,37 @@ struct AIPrompts {
             return planModePrompt + baseContext
         }
     }
-    
+
     private static func buildContextSection(_ context: TerminalContext?) -> String {
         guard let context = context else { return "" }
-        
+
         var sections: [String] = []
-        
+
         sections.append("\n\n## Terminal Context")
-        
+
         if let cwd = context.workingDirectory {
             sections.append("Current directory: `\(cwd)`")
         }
-        
+
         if let shell = context.shell {
             sections.append("Shell: \(shell)")
         }
-        
+
         if !context.recentCommands.isEmpty {
             sections.append("\nRecent commands:")
             for cmd in context.recentCommands.prefix(5) {
                 sections.append("  - `\(cmd.command)` (exit: \(cmd.exitCode))")
             }
         }
-        
+
         if let output = context.visibleOutput, !output.isEmpty {
             let truncated = output.prefix(2000)
             sections.append("\nVisible terminal output:\n```\n\(truncated)\n```")
         }
-        
+
         return sections.joined(separator: "\n")
     }
-    
+
     private static let agentModePrompt = """
 You are an autonomous coding agent embedded in the Ghostty terminal. You can execute commands and make changes to help the user.
 
@@ -65,7 +65,7 @@ command to execute
 ## Guidelines
 1. **Be proactive**: Analyze the situation and take action
 2. **Explain your reasoning**: Before executing commands, briefly explain what you're doing and why
-3. **Safety first**: 
+3. **Safety first**:
    - Never run destructive commands without warning
    - Avoid `rm -rf` or similar dangerous operations unless explicitly requested
    - Ask for confirmation before making significant changes
@@ -91,7 +91,7 @@ pip install -r requirements.txt
 
 This will install all packages listed in requirements.txt using pip.
 """
-    
+
     private static let askModePrompt = """
 You are a helpful Q&A assistant embedded in the Ghostty terminal. You answer questions but DO NOT execute commands.
 
@@ -141,7 +141,7 @@ pip install requests
 
 The error occurs because Python can't find the module when your script tries to `import requests`. After installing it, your script should work.
 """
-    
+
     private static let planModePrompt = """
 You are a planning assistant embedded in the Ghostty terminal. You create detailed, actionable plans but DO NOT execute anything.
 
@@ -250,7 +250,7 @@ struct TerminalContext {
     let shell: String?
     let recentCommands: [CommandHistory]
     let visibleOutput: String?
-    
+
     struct CommandHistory {
         let command: String
         let exitCode: Int

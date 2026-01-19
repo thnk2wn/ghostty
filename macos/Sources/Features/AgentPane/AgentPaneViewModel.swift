@@ -57,12 +57,12 @@ class AgentPaneViewModel: ObservableObject {
     var availableModels: [String] {
         return AgentConfig.availableModels()
     }
-    
+
     init() {
         loadConfig()
         checkAPIKeys()
     }
-    
+
     private func checkAPIKeys() {
         hasAPIKey = AgentConfig.hasValidAPIKey(for: selectedModel)
     }
@@ -76,7 +76,7 @@ class AgentPaneViewModel: ObservableObject {
     func submitInput(_ input: String) {
         guard !input.isEmpty else { return }
         guard bridge != nil else { return }
-        
+
         checkAPIKeys()
         guard hasAPIKey else {
             let errorBlock = AgentOutputMessage(
@@ -134,33 +134,33 @@ class AgentPaneViewModel: ObservableObject {
                 self.outputBlocks.append(errorBlock)
             }
         }
-        
+
         saveConfig()
     }
 
     func executeCommands() {
         guard !pendingCommands.isEmpty else { return }
-        
+
         let commandsToExecute = pendingCommands
         pendingCommands.removeAll()
-        
+
         isProcessing = true
-        
+
         var executedCount = 0
         let totalCommands = commandsToExecute.count
-        
+
         func executeNext() {
             guard executedCount < totalCommands else {
                 isProcessing = false
                 return
             }
-            
+
             let command = commandsToExecute[executedCount]
             executedCount += 1
-            
+
             bridge?.executeCommand(command) { [weak self] result in
                 guard let self = self else { return }
-                
+
                 switch result {
                 case .success(let cmdResult):
                     let message = AgentOutputMessage(
@@ -171,7 +171,7 @@ class AgentPaneViewModel: ObservableObject {
                         isProcessing: false
                     )
                     self.outputBlocks.append(message)
-                    
+
                 case .failure(let error):
                     let message = AgentOutputMessage(
                         mode: .agent,
@@ -182,11 +182,11 @@ class AgentPaneViewModel: ObservableObject {
                     )
                     self.outputBlocks.append(message)
                 }
-                
+
                 executeNext()
             }
         }
-        
+
         executeNext()
     }
 
