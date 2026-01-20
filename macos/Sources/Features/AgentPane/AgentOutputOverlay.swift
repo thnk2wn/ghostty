@@ -14,8 +14,12 @@ struct AgentOutputOverlay: View {
     private let minPanelHeight: CGFloat = 100
     private let maxPanelHeight: CGFloat = 600
 
+    private var hasContent: Bool {
+        !viewModel.richBlocks.isEmpty || !viewModel.pendingCommands.isEmpty
+    }
+
     var body: some View {
-        if viewModel.useRichOverlays && !viewModel.richBlocks.isEmpty {
+        if viewModel.useRichOverlays && hasContent {
             richBlocksPanel
         }
     }
@@ -31,7 +35,7 @@ struct AgentOutputOverlay: View {
             // Scrollable content
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(viewModel.richBlocks) { block in
                             RichAIBlockView(
                                 block: block,
@@ -41,6 +45,22 @@ struct AgentOutputOverlay: View {
                             .id(block.id)
                             .frame(maxWidth: .infinity)
                         }
+
+                        // Inline approval view (appears after blocks)
+                        if !viewModel.pendingCommands.isEmpty {
+                            InlineApprovalView(
+                                commands: viewModel.pendingCommands,
+                                onApprove: { viewModel.executeCommands() },
+                                onReject: { viewModel.rejectCommands() }
+                            )
+                            .id("approval-view")
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        // Invisible anchor at the very bottom for scrolling
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom-anchor")
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -48,6 +68,15 @@ struct AgentOutputOverlay: View {
                 .onChange(of: viewModel.richBlocks.last?.content) { _ in
                     if let lastBlock = viewModel.richBlocks.last {
                         scrollProxy.scrollTo(lastBlock.id, anchor: .bottom)
+                    }
+                }
+                .onChange(of: viewModel.pendingCommands.count) { count in
+                    if count > 0 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                scrollProxy.scrollTo("bottom-anchor", anchor: .bottom)
+                            }
+                        }
                     }
                 }
             }

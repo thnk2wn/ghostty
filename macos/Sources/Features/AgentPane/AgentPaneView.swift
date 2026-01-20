@@ -12,17 +12,6 @@ struct AgentPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Approval dialog (shows at top when commands need approval)
-            if !viewModel.pendingCommands.isEmpty {
-                ApprovalView(
-                    commands: viewModel.pendingCommands,
-                    onApprove: { viewModel.executeCommands() },
-                    onReject: { viewModel.rejectCommands() }
-                )
-                .padding(.horizontal)
-                .padding(.top, 6)
-            }
-
             // API Key warning (shows if missing)
             if !viewModel.hasAPIKey {
                 HStack(spacing: 8) {
@@ -152,10 +141,6 @@ struct AgentPaneView: View {
             height += 30
         }
 
-        if !viewModel.pendingCommands.isEmpty {
-            height += 100
-        }
-
         return height
     }
 
@@ -214,56 +199,177 @@ struct ModeInfoPopover: View {
     }
 }
 
-struct ApprovalView: View {
+/// Inline approval view that appears within the output panel
+struct InlineApprovalView: View {
     let commands: [String]
     let onApprove: () -> Void
     let onReject: () -> Void
 
+    private static let maxHeight: CGFloat = 150
+    private static let maxCharactersPerCommand: Int = 1500
+
+    private var displayCode: String {
+        commands.map { command in
+            if command.count > Self.maxCharactersPerCommand {
+                return String(command.prefix(Self.maxCharactersPerCommand)) + "\n... (truncated)"
+            }
+            return command
+        }.joined(separator: "\n\n")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
+                    .font(.system(size: 14, weight: .medium))
+
                 Text("Approval Required")
-                    .font(.headline)
-            }
-
-            Text("The agent wants to execute the following commands:")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(commands, id: \.self) { command in
-                    Text(command)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.black.opacity(0.05))
-                        .cornerRadius(4)
-                }
-            }
-
-            HStack(spacing: 12) {
-                Button("Reject", role: .cancel) {
-                    onReject()
-                }
-                .buttonStyle(.bordered)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.orange)
 
                 Spacer()
 
-                Button("Approve") {
-                    onApprove()
+                HStack(spacing: 8) {
+                    Button("Reject") {
+                        onReject()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Approve") {
+                        onApprove()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.borderedProminent)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color.orange.opacity(0.08))
+
+            // Code block
+            ApprovalCodeBlockView(
+                code: displayCode,
+                maxHeight: Self.maxHeight
+            )
+            .padding(12)
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.98))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange, lineWidth: 2)
+                .stroke(Color.orange.opacity(0.5), lineWidth: 1.5)
         )
+        .shadow(color: Color.black.opacity(0.15), radius: 6, x: 0, y: 3)
+    }
+}
+
+struct ApprovalCodeBlockView: View {
+    let code: String
+    let maxHeight: CGFloat
+    @State private var isHovering = false
+    @State private var copied = false
+    @State private var contentOverflows = false
+
+    private var lines: [String] {
+        code.components(separatedBy: "\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header bar
+            HStack {
+                Text("shell")
+                    .font(.caption.monospaced())
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if contentOverflows {
+                    Text("scroll for more")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .opacity(0.7)
+                }
+
+                Button(action: copyToClipboard) {
+                    HStack(spacing: 4) {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        Text(copied ? "Copied" : "Copy")
+                    }
+                    .font(.caption)
+                    .foregroundColor(copied ? .green : .secondary)
+                }
+                .buttonStyle(.plain)
+                .opacity(isHovering || copied ? 1 : 0.6)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
+
+            // Code content with scroll and max height
+            ScrollView([.vertical, .horizontal], showsIndicators: true) {
+                HStack(alignment: .top, spacing: 0) {
+                    // Line numbers column
+                    VStack(alignment: .trailing, spacing: 0) {
+                        ForEach(1...max(lines.count, 1), id: \.self) { num in
+                            Text("\(num)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.secondary.opacity(0.5))
+                                .frame(height: 16)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 6)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+
+                    Divider()
+
+                    // Code content with syntax highlighting
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                            Text(SyntaxHighlighter.highlight(line: line, language: "bash"))
+                                .font(.system(size: 12, design: .monospaced))
+                                .frame(height: 16, alignment: .leading)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .textSelection(.enabled)
+                }
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear.onAppear {
+                            contentOverflows = geometry.size.height > maxHeight
+                        }
+                        .onChange(of: code) { _ in
+                            contentOverflows = geometry.size.height > maxHeight
+                        }
+                    }
+                )
+            }
+            .frame(maxHeight: maxHeight)
+            .background(Color(NSColor.textBackgroundColor).opacity(0.3))
+        }
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+        )
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+
+    private func copyToClipboard() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            copied = false
+        }
     }
 }
 
