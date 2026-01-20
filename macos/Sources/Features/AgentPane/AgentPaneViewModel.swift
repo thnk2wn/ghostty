@@ -72,7 +72,6 @@ class AgentPaneViewModel: ObservableObject {
     @Published var outputBlocks: [AgentOutputMessage] = []
     @Published var hasAPIKey: Bool = false
     @Published var useRichOverlays: Bool = true
-    @Published var hideLayoutPicker: Bool = false
     @Published var richBlocks: [RichAIBlock] = []
 
     private var bridge: AgentBridge?

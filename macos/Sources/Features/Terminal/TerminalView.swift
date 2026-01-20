@@ -77,10 +77,33 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
         case .ready:
             ZStack {
                 VStack(spacing: 0) {
-                    // If we're running in debug mode we show a warning so that users
-                    // know that performance will be degraded.
-                    if (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
+                    // If we're running in debug mode and the config enables the warning,
+                    // show a banner so users know that performance will be degraded.
+                    if ghostty.config.showDebugWarning && (Ghostty.info.mode == GHOSTTY_BUILD_MODE_DEBUG || Ghostty.info.mode == GHOSTTY_BUILD_MODE_RELEASE_SAFE) {
                         DebugBuildWarningView()
+                    }
+
+                    // AI Agent input pane (shown at top if enabled)
+                    if ghostty.config.aiAgentEnabled {
+                        if let surface = lastFocusedSurface.value {
+                            AgentPaneView(
+                                viewModel: agentViewModel,
+                                surfaceView: surface
+                            )
+                        } else {
+                            AgentPaneView(
+                                viewModel: agentViewModel,
+                                surfaceView: nil
+                            )
+                        }
+                    }
+
+                    // AI Agent output blocks panel (directly below input)
+                    if ghostty.config.aiAgentEnabled {
+                        AgentOutputOverlay(
+                            viewModel: agentViewModel,
+                            surfaceView: lastFocusedSurface.value
+                        )
                     }
 
                     TerminalSplitTreeView(
@@ -106,29 +129,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         }
                         .frame(idealWidth: lastFocusedSurface.value?.initialSize?.width,
                                idealHeight: lastFocusedSurface.value?.initialSize?.height)
-
-                    // AI Agent output blocks panel (inline, not overlay)
-                    if ghostty.config.aiAgentEnabled {
-                        AgentOutputOverlay(
-                            viewModel: agentViewModel,
-                            surfaceView: lastFocusedSurface.value
-                        )
-                    }
-
-                    // AI Agent input pane (shown at bottom if enabled)
-                    if ghostty.config.aiAgentEnabled {
-                        if let surface = lastFocusedSurface.value {
-                            AgentPaneView(
-                                viewModel: agentViewModel,
-                                surfaceView: surface
-                            )
-                        } else {
-                            AgentPaneView(
-                                viewModel: agentViewModel,
-                                surfaceView: nil
-                            )
-                        }
-                    }
                 }
                 // Ignore safe area to extend up in to the titlebar region if we have the "hidden" titlebar style
                 .ignoresSafeArea(.container, edges: ghostty.config.macosTitlebarStyle == "hidden" ? .top : [])

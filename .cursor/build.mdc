@@ -1,0 +1,9 @@
+---
+globs:
+alwaysApply: true
+---
+
+- When you make changes and want to build, prefer the steps in the build task "Rebuild and Launch Ghostty" in .vscode/tasks.json (inline those steps if needed)
+- This has the expected steps of building, signing, killing old instances, and re-launching the app.
+
+@.vscode/tasks.json

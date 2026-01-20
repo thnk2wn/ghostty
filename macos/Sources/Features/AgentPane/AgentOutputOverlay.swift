@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Bottom panel that displays AI agent output blocks
-/// Positioned below the terminal, not overlaying it
+/// Panel that displays AI agent output blocks
+/// Positioned below the AI input, above the terminal
 struct AgentOutputOverlay: View {
     @ObservedObject var viewModel: AgentPaneViewModel
     var surfaceView: Ghostty.SurfaceView?
@@ -24,14 +24,11 @@ struct AgentOutputOverlay: View {
         }
     }
 
-    // MARK: - Rich Blocks Panel (bottom drawer)
+    // MARK: - Rich Blocks Panel
 
     @ViewBuilder
     private var richBlocksPanel: some View {
         VStack(spacing: 0) {
-            // Draggable splitter handle
-            splitterHandle
-
             // Scrollable content
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical, showsIndicators: true) {
@@ -80,6 +77,9 @@ struct AgentOutputOverlay: View {
                     }
                 }
             }
+
+            // Draggable splitter handle at bottom
+            splitterHandle
         }
         .frame(maxWidth: .infinity)
         .frame(height: panelHeight)
@@ -109,8 +109,8 @@ struct AgentOutputOverlay: View {
                             isDragging = true
                             dragStartHeight = panelHeight
                         }
-                        // Dragging up (negative translation) increases panel height
-                        let newHeight = dragStartHeight - value.translation.height
+                        // Dragging down (positive translation) increases panel height
+                        let newHeight = dragStartHeight + value.translation.height
                         panelHeight = min(max(newHeight, minPanelHeight), maxPanelHeight)
                     }
                     .onEnded { _ in

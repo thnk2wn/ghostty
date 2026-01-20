@@ -86,11 +86,14 @@ pub const Window = extern struct {
                 Self,
                 bool,
                 .{
-                    .default = build_config.is_debug,
+                    .default = false,
                     .accessor = gobject.ext.typedAccessor(Self, bool, .{
                         .getter = struct {
-                            pub fn getter(_: *Self) bool {
-                                return build_config.is_debug;
+                            pub fn getter(self: *Self) bool {
+                                if (!build_config.is_debug) return false;
+                                const priv = Self.private(self);
+                                const cfg = priv.config orelse return false;
+                                return cfg.@"show-debug-warning";
                             }
                         }.getter,
                     }),

@@ -633,6 +633,14 @@ extension Ghostty {
             return buffer.map { Ghostty.Command(cValue: $0) }
         }
 
+        var showDebugWarning: Bool {
+            guard let config = self.config else { return false }
+            var v = false
+            let key = "show-debug-warning"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
         // MARK: - AI Agent
 
         var aiAgentEnabled: Bool {

@@ -8,7 +8,6 @@ struct AgentConfig {
     var autoExecuteCommands: Bool
     var maxOutputTokens: Int
     var useRichOverlays: Bool
-    var hideLayoutPicker: Bool
 
     static let `default` = AgentConfig(
         defaultModel: "gpt-4o-mini",
@@ -17,8 +16,7 @@ struct AgentConfig {
         temperature: 0.7,
         autoExecuteCommands: false,
         maxOutputTokens: 4096,
-        useRichOverlays: true,
-        hideLayoutPicker: false
+        useRichOverlays: true
     )
 
     static func load() -> AgentConfig {
@@ -31,8 +29,7 @@ struct AgentConfig {
             temperature: defaults.object(forKey: "agentTemperature") as? Double ?? 0.7,
             autoExecuteCommands: defaults.bool(forKey: "agentAutoExecuteCommands"),
             maxOutputTokens: defaults.object(forKey: "agentMaxOutputTokens") as? Int ?? 4096,
-            useRichOverlays: defaults.object(forKey: "agentUseRichOverlays") as? Bool ?? true,
-            hideLayoutPicker: defaults.bool(forKey: "agentHideLayoutPicker")
+            useRichOverlays: defaults.object(forKey: "agentUseRichOverlays") as? Bool ?? true
         )
     }
 
@@ -45,7 +42,6 @@ struct AgentConfig {
         defaults.set(autoExecuteCommands, forKey: "agentAutoExecuteCommands")
         defaults.set(maxOutputTokens, forKey: "agentMaxOutputTokens")
         defaults.set(useRichOverlays, forKey: "agentUseRichOverlays")
-        defaults.set(hideLayoutPicker, forKey: "agentHideLayoutPicker")
     }
 
     static func hasValidAPIKey(for model: String) -> Bool {
@@ -88,7 +84,6 @@ extension AgentPaneViewModel {
         self.selectedModel = config.defaultModel
         self.mode = config.defaultMode
         self.useRichOverlays = config.useRichOverlays
-        self.hideLayoutPicker = config.hideLayoutPicker
     }
 
     func saveConfig() {
@@ -99,8 +94,7 @@ extension AgentPaneViewModel {
             temperature: 0.7,
             autoExecuteCommands: false,
             maxOutputTokens: 4096,
-            useRichOverlays: useRichOverlays,
-            hideLayoutPicker: hideLayoutPicker
+            useRichOverlays: useRichOverlays
         )
         config.save()
     }

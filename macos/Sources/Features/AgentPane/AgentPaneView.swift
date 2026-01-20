@@ -6,6 +6,7 @@ struct AgentPaneView: View {
     @State private var inputText: String = ""
     @State private var showModeInfo: Bool = false
     @State private var hasConfigured: Bool = false
+    @State private var inputHeight: CGFloat = 24
     @FocusState private var inputFocused: Bool
 
     var surfaceView: Ghostty.SurfaceView?
@@ -25,29 +26,33 @@ struct AgentPaneView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 6)
                 .background(Color.orange.opacity(0.1))
+                .frame(height: 30)
             }
 
             // Main control bar
-            HStack(spacing: 12) {
-                // Mode selector
-                Picker("Mode", selection: $viewModel.mode) {
-                    ForEach(AgentMode.allCases) { mode in
-                        Label(mode.rawValue, systemImage: mode.icon)
-                            .tag(mode)
+            HStack(alignment: .center, spacing: 12) {
+                // Mode selector with info button
+                HStack(alignment: .center, spacing: 2) {
+                    Picker("Mode", selection: $viewModel.mode) {
+                        ForEach(AgentMode.allCases) { mode in
+                            Label(mode.rawValue, systemImage: mode.icon)
+                                .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 280)
+
+                    Button(action: { showModeInfo.toggle() }) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showModeInfo) {
+                        ModeInfoPopover()
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 280)
-
-                Button(action: { showModeInfo.toggle() }) {
-                    Image(systemName: "info.circle")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showModeInfo) {
-                    ModeInfoPopover()
-                }
+                .padding(.trailing, 4)
 
                 // Layout picker button
                 LayoutPickerButton(
@@ -55,13 +60,6 @@ struct AgentPaneView: View {
                         get: { viewModel.useRichOverlays },
                         set: { newValue in
                             viewModel.useRichOverlays = newValue
-                            viewModel.saveConfig()
-                        }
-                    ),
-                    dontShowAgain: Binding(
-                        get: { viewModel.hideLayoutPicker },
-                        set: { newValue in
-                            viewModel.hideLayoutPicker = newValue
                             viewModel.saveConfig()
                         }
                     )
@@ -98,20 +96,22 @@ struct AgentPaneView: View {
                     .help("Clear output blocks")
                 }
             }
+            .frame(height: 40)
             .padding(.horizontal)
-            .padding(.vertical, 8)
             .background(viewModel.mode.color.opacity(0.1))
 
             Divider()
 
             // Input area
-            HStack(spacing: 8) {
-                TextField(placeholderForMode(viewModel.mode), text: $inputText)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($inputFocused)
-                    .onSubmit {
-                        submitInput()
-                    }
+            HStack(alignment: .bottom, spacing: 8) {
+                MultiLineTextFieldWrapper(
+                    text: $inputText,
+                    placeholder: placeholderForMode(viewModel.mode),
+                    onSubmit: submitInput,
+                    focused: $inputFocused,
+                    height: $inputHeight
+                )
+                .frame(height: inputHeight)
 
                 Button(action: submitInput) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -120,11 +120,13 @@ struct AgentPaneView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(inputText.isEmpty || viewModel.isProcessing)
+                .help("Send message (⏎)\nNew line (⇧⏎)")
             }
-            .padding()
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .background(Color(NSColor.controlBackgroundColor))
-        .frame(height: calculateHeight())
         .onAppear {
             inputFocused = true
             tryConfigureSurface()
@@ -132,16 +134,6 @@ struct AgentPaneView: View {
         .onChange(of: surfaceView?.id) { _ in
             tryConfigureSurface()
         }
-    }
-
-    private func calculateHeight() -> CGFloat {
-        var height: CGFloat = 80
-
-        if !viewModel.hasAPIKey {
-            height += 30
-        }
-
-        return height
     }
 
     private func tryConfigureSurface() {
@@ -157,6 +149,7 @@ struct AgentPaneView: View {
         guard !inputText.isEmpty else { return }
         viewModel.submitInput(inputText)
         inputText = ""
+        inputHeight = 24
     }
 
     private func placeholderForMode(_ mode: AgentMode) -> String {

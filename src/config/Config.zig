@@ -2145,6 +2145,17 @@ keybind: Keybinds = .{},
 /// Currently only supported on Linux (GTK).
 @"window-show-tab-bar": WindowShowTabBar = .auto,
 
+/// If true, show a warning banner when running a debug or release-safe build.
+/// By default, this is disabled to avoid taking up screen space. Enable this
+/// if you want to be explicitly reminded that you're running a non-optimized
+/// build of Ghostty.
+///
+/// This warning will only appear in debug and release-safe builds, never in
+/// release-fast or release-small builds.
+///
+/// Default is false.
+@"show-debug-warning": bool = false,
+
 /// Background color for the window titlebar. This only takes effect if
 /// window-theme is set to ghostty. Currently only supported in the GTK app
 /// runtime.
