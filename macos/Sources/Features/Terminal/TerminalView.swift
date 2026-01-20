@@ -107,7 +107,15 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         .frame(idealWidth: lastFocusedSurface.value?.initialSize?.width,
                                idealHeight: lastFocusedSurface.value?.initialSize?.height)
 
-                    // AI Agent pane (shown at bottom if enabled)
+                    // AI Agent output blocks panel (inline, not overlay)
+                    if ghostty.config.aiAgentEnabled {
+                        AgentOutputOverlay(
+                            viewModel: agentViewModel,
+                            surfaceView: lastFocusedSurface.value
+                        )
+                    }
+
+                    // AI Agent input pane (shown at bottom if enabled)
                     if ghostty.config.aiAgentEnabled {
                         if let surface = lastFocusedSurface.value {
                             AgentPaneView(
@@ -134,11 +142,6 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         self.delegate?.performAction(action, on: surfaceView)
                     }
                 }
-
-                // AI Agent output blocks overlay (disabled - using terminal output instead)
-                // if ghostty.config.aiAgentEnabled {
-                //     AgentOutputOverlay(viewModel: agentViewModel)
-                // }
 
                 // Show update information above all else.
                 if viewModel.updateOverlayIsVisible {

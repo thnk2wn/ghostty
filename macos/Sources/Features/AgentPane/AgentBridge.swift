@@ -9,6 +9,10 @@ class AgentBridge {
     private let aiClient = AIClient()
     private let markdownRenderer = MarkdownTerminalRenderer()
 
+    // Rich overlay state
+    private var currentRichBlockId: UUID?
+    private var isUsingRichOverlays: Bool = true
+
     init(surface: Ghostty.SurfaceView, viewModel: AgentPaneViewModel) {
         self.surface = surface
         self.viewModel = viewModel
@@ -195,30 +199,42 @@ class AgentBridge {
 
     @MainActor
     private func startOutputBlock(mode: AgentMode, query: String) {
-        guard let surface = self.surface.surface else { return }
+        // Capture the setting at the start of the block
+        self.isUsingRichOverlays = viewModel?.useRichOverlays ?? AgentConfig.load().useRichOverlays
 
-        let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
+        if isUsingRichOverlays {
+            // Rich overlay path: create a RichAIBlock
+            guard let surface = self.surface.surface else { return }
+            let startRow = Int(ghostty_agent_get_cursor_row(surface))
+            let blockId = viewModel?.startRichBlock(mode: mode, query: query, startRow: startRow)
+            self.currentRichBlockId = blockId
+        } else {
+            // Terminal output path: write ANSI to terminal
+            guard let surface = self.surface.surface else { return }
 
-        let blockId = ghostty_agent_start_block(surface, modeInt)
-        guard blockId > 0 else { return }
+            let modeInt: Int32 = mode == .agent ? 0 : mode == .ask ? 1 : 2
 
-        self.currentBlockId = blockId
-        self.hasWrittenResponseHeader = false
-        self.spinnerFrame = 0
+            let blockId = ghostty_agent_start_block(surface, modeInt)
+            guard blockId > 0 else { return }
 
-        let topBorderRow = ghostty_agent_get_cursor_row(surface)
-        let spacesLine = String(repeating: " ", count: 80)
+            self.currentBlockId = blockId
+            self.hasWrittenResponseHeader = false
+            self.spinnerFrame = 0
 
-        self.writeToTerminalOutput("\r\n\(spacesLine)")
-        ghostty_agent_mark_row(surface, topBorderRow + 1, blockId, true)
+            let topBorderRow = ghostty_agent_get_cursor_row(surface)
+            let spacesLine = String(repeating: " ", count: 80)
 
-        self.writeToTerminalOutput("\r\n")
+            self.writeToTerminalOutput("\r\n\(spacesLine)")
+            ghostty_agent_mark_row(surface, topBorderRow + 1, blockId, true)
 
-        let modeIcon = mode == .agent ? "✨" : mode == .ask ? "❓" : "📋"
-        self.writeToTerminalOutput("\(modeIcon) \u{001B}[1m\(mode.rawValue) Mode\u{001B}[0m\r\n\r\n")
-        self.writeToTerminalOutput("\u{001B}[1mQuery:\u{001B}[0m \(query)\r\n\r\n")
+            self.writeToTerminalOutput("\r\n")
 
-        startSpinner()
+            let modeIcon = mode == .agent ? "✨" : mode == .ask ? "❓" : "📋"
+            self.writeToTerminalOutput("\(modeIcon) \u{001B}[1m\(mode.rawValue) Mode\u{001B}[0m\r\n\r\n")
+            self.writeToTerminalOutput("\u{001B}[1mQuery:\u{001B}[0m \(query)\r\n\r\n")
+
+            startSpinner()
+        }
     }
 
     @MainActor
@@ -261,43 +277,58 @@ class AgentBridge {
 
     @MainActor
     private func appendToCurrentBlock(_ text: String) {
-        guard currentBlockId > 0 else { return }
+        if isUsingRichOverlays {
+            // Rich overlay path: append raw markdown to the block
+            guard let blockId = currentRichBlockId else { return }
+            viewModel?.appendToRichBlock(blockId: blockId, text: text)
+        } else {
+            // Terminal output path: convert to ANSI
+            guard currentBlockId > 0 else { return }
 
-        if !hasWrittenResponseHeader {
-            stopSpinner()
-            // Clear spinner line, then write response header
-            self.writeToTerminalOutput("\r\u{001B}[2K\u{001B}[1mResponse:\u{001B}[0m\r\n")
-            hasWrittenResponseHeader = true
-            markdownRenderer.reset()
+            if !hasWrittenResponseHeader {
+                stopSpinner()
+                // Clear spinner line, then write response header
+                self.writeToTerminalOutput("\r\u{001B}[2K\u{001B}[1mResponse:\u{001B}[0m\r\n")
+                hasWrittenResponseHeader = true
+                markdownRenderer.reset()
+            }
+
+            let ansiOutput = markdownRenderer.append(text)
+            self.writeToTerminalOutput(ansiOutput)
         }
-
-        let ansiOutput = markdownRenderer.append(text)
-        self.writeToTerminalOutput(ansiOutput)
     }
 
     @MainActor
     private func endOutputBlock() async {
-        guard let surface = self.surface.surface else { return }
-        guard currentBlockId > 0 else { return }
+        if isUsingRichOverlays {
+            // Rich overlay path: mark block as complete
+            guard let blockId = currentRichBlockId else { return }
+            viewModel?.endRichBlock(blockId: blockId)
+            currentRichBlockId = nil
+        } else {
+            // Terminal output path: close the terminal block
+            guard let surface = self.surface.surface else { return }
+            guard currentBlockId > 0 else { return }
 
-        stopSpinner()
+            stopSpinner()
 
-        // Flush any remaining markdown content
-        let remaining = markdownRenderer.flush()
-        if !remaining.isEmpty {
-            self.writeToTerminalOutput(remaining)
+            // Flush any remaining markdown content
+            let remaining = markdownRenderer.flush()
+            if !remaining.isEmpty {
+                self.writeToTerminalOutput(remaining)
+            }
+
+            let bottomBorderRow = ghostty_agent_get_cursor_row(surface)
+            let spacesLine = String(repeating: " ", count: 80)
+
+            self.writeToTerminalOutput("\r\n\r\n\(spacesLine)")
+            ghostty_agent_mark_row(surface, bottomBorderRow + 1, currentBlockId, false)
+
+            self.writeToTerminalOutput("\r\n")
+
+            ghostty_agent_end_block(surface, currentBlockId)
+            currentBlockId = 0
         }
-
-        let bottomBorderRow = ghostty_agent_get_cursor_row(surface)
-        let spacesLine = String(repeating: " ", count: 80)
-
-        self.writeToTerminalOutput("\r\n\r\n\(spacesLine)")
-        ghostty_agent_mark_row(surface, bottomBorderRow + 1, currentBlockId, false)
-
-        self.writeToTerminalOutput("\r\n")
-
-        ghostty_agent_end_block(surface, currentBlockId)
-        currentBlockId = 0
     }
 
     private func writeToTerminalOutput(_ text: String) {

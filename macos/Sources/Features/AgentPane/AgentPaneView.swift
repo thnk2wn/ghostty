@@ -60,6 +60,24 @@ struct AgentPaneView: View {
                     ModeInfoPopover()
                 }
 
+                // Layout picker button
+                LayoutPickerButton(
+                    useRichOverlays: Binding(
+                        get: { viewModel.useRichOverlays },
+                        set: { newValue in
+                            viewModel.useRichOverlays = newValue
+                            viewModel.saveConfig()
+                        }
+                    ),
+                    dontShowAgain: Binding(
+                        get: { viewModel.hideLayoutPicker },
+                        set: { newValue in
+                            viewModel.hideLayoutPicker = newValue
+                            viewModel.saveConfig()
+                        }
+                    )
+                )
+
                 Spacer()
 
                 // Model selector
@@ -81,7 +99,7 @@ struct AgentPaneView: View {
                 .menuStyle(.borderlessButton)
 
                 // Clear blocks button
-                if !viewModel.outputBlocks.isEmpty {
+                if !viewModel.outputBlocks.isEmpty || !viewModel.richBlocks.isEmpty {
                     Button(action: { viewModel.clearBlocks() }) {
                         Image(systemName: "xmark.circle")
                             .font(.caption)

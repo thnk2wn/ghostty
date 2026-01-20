@@ -33,7 +33,7 @@ enum AgentMode: String, CaseIterable, Identifiable {
     }
 }
 
-// Output block message for display as overlay
+// Output block message for display as overlay (legacy)
 struct AgentOutputMessage: Identifiable {
     let id: UUID = UUID()
     let mode: AgentMode
@@ -41,6 +41,26 @@ struct AgentOutputMessage: Identifiable {
     let content: String?
     let commands: [String]?
     let isProcessing: Bool
+}
+
+// Rich AI block for inline overlay rendering
+struct RichAIBlock: Identifiable {
+    let id: UUID
+    let mode: AgentMode
+    let query: String?
+    var content: String
+    let startRow: Int
+    var isStreaming: Bool
+    var isCollapsed: Bool = false
+
+    init(mode: AgentMode, query: String?, startRow: Int) {
+        self.id = UUID()
+        self.mode = mode
+        self.query = query
+        self.content = ""
+        self.startRow = startRow
+        self.isStreaming = true
+    }
 }
 
 @MainActor
@@ -51,8 +71,12 @@ class AgentPaneViewModel: ObservableObject {
     @Published var selectedModel: String = "gpt-4o-mini"
     @Published var outputBlocks: [AgentOutputMessage] = []
     @Published var hasAPIKey: Bool = false
+    @Published var useRichOverlays: Bool = true
+    @Published var hideLayoutPicker: Bool = false
+    @Published var richBlocks: [RichAIBlock] = []
 
     private var bridge: AgentBridge?
+    private var currentRichBlockId: UUID?
 
     var availableModels: [String] {
         return AgentConfig.availableModels()
@@ -204,5 +228,38 @@ class AgentPaneViewModel: ObservableObject {
 
     func clearBlocks() {
         outputBlocks.removeAll()
+        richBlocks.removeAll()
+        currentRichBlockId = nil
+    }
+
+    // MARK: - Rich Block Management
+
+    func startRichBlock(mode: AgentMode, query: String?, startRow: Int) -> UUID {
+        let block = RichAIBlock(mode: mode, query: query, startRow: startRow)
+        richBlocks.append(block)
+        currentRichBlockId = block.id
+        return block.id
+    }
+
+    func appendToRichBlock(blockId: UUID, text: String) {
+        guard let index = richBlocks.firstIndex(where: { $0.id == blockId }) else { return }
+        richBlocks[index].content += text
+    }
+
+    func endRichBlock(blockId: UUID) {
+        guard let index = richBlocks.firstIndex(where: { $0.id == blockId }) else { return }
+        richBlocks[index].isStreaming = false
+        if currentRichBlockId == blockId {
+            currentRichBlockId = nil
+        }
+    }
+
+    func toggleRichBlockCollapsed(blockId: UUID) {
+        guard let index = richBlocks.firstIndex(where: { $0.id == blockId }) else { return }
+        richBlocks[index].isCollapsed.toggle()
+    }
+
+    func removeRichBlock(blockId: UUID) {
+        richBlocks.removeAll { $0.id == blockId }
     }
 }

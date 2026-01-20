@@ -7,6 +7,8 @@ struct AgentConfig {
     var temperature: Double
     var autoExecuteCommands: Bool
     var maxOutputTokens: Int
+    var useRichOverlays: Bool
+    var hideLayoutPicker: Bool
 
     static let `default` = AgentConfig(
         defaultModel: "gpt-4o-mini",
@@ -14,7 +16,9 @@ struct AgentConfig {
         streamResponses: true,
         temperature: 0.7,
         autoExecuteCommands: false,
-        maxOutputTokens: 4096
+        maxOutputTokens: 4096,
+        useRichOverlays: true,
+        hideLayoutPicker: false
     )
 
     static func load() -> AgentConfig {
@@ -26,7 +30,9 @@ struct AgentConfig {
             streamResponses: defaults.object(forKey: "agentStreamResponses") as? Bool ?? true,
             temperature: defaults.object(forKey: "agentTemperature") as? Double ?? 0.7,
             autoExecuteCommands: defaults.bool(forKey: "agentAutoExecuteCommands"),
-            maxOutputTokens: defaults.object(forKey: "agentMaxOutputTokens") as? Int ?? 4096
+            maxOutputTokens: defaults.object(forKey: "agentMaxOutputTokens") as? Int ?? 4096,
+            useRichOverlays: defaults.object(forKey: "agentUseRichOverlays") as? Bool ?? true,
+            hideLayoutPicker: defaults.bool(forKey: "agentHideLayoutPicker")
         )
     }
 
@@ -38,6 +44,8 @@ struct AgentConfig {
         defaults.set(temperature, forKey: "agentTemperature")
         defaults.set(autoExecuteCommands, forKey: "agentAutoExecuteCommands")
         defaults.set(maxOutputTokens, forKey: "agentMaxOutputTokens")
+        defaults.set(useRichOverlays, forKey: "agentUseRichOverlays")
+        defaults.set(hideLayoutPicker, forKey: "agentHideLayoutPicker")
     }
 
     static func hasValidAPIKey(for model: String) -> Bool {
@@ -79,6 +87,8 @@ extension AgentPaneViewModel {
         let config = AgentConfig.load()
         self.selectedModel = config.defaultModel
         self.mode = config.defaultMode
+        self.useRichOverlays = config.useRichOverlays
+        self.hideLayoutPicker = config.hideLayoutPicker
     }
 
     func saveConfig() {
@@ -88,7 +98,9 @@ extension AgentPaneViewModel {
             streamResponses: true,
             temperature: 0.7,
             autoExecuteCommands: false,
-            maxOutputTokens: 4096
+            maxOutputTokens: 4096,
+            useRichOverlays: useRichOverlays,
+            hideLayoutPicker: hideLayoutPicker
         )
         config.save()
     }
