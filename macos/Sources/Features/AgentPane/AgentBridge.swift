@@ -13,9 +13,19 @@ class AgentBridge {
     private var currentRichBlockId: UUID?
     private var isUsingRichOverlays: Bool = true
 
+    // Conversation history for maintaining context
+    private var conversationHistory: [AIMessage] = []
+    private var originalTask: String?
+
     init(surface: Ghostty.SurfaceView, viewModel: AgentPaneViewModel) {
         self.surface = surface
         self.viewModel = viewModel
+    }
+
+    /// Clear conversation history (call when starting a new task)
+    func clearHistory() {
+        conversationHistory.removeAll()
+        originalTask = nil
     }
 
     deinit {
@@ -31,10 +41,18 @@ class AgentBridge {
                 let context = await self.gatherTerminalContext()
                 let systemPrompt = AIPrompts.systemPrompt(for: mode, terminalContext: context)
 
-                let messages = [
-                    AIMessage(role: "system", content: systemPrompt),
-                    AIMessage(role: "user", content: input)
-                ]
+                // Track original task for context
+                if originalTask == nil {
+                    originalTask = input
+                }
+
+                // Build messages with conversation history
+                var messages = [AIMessage(role: "system", content: systemPrompt)]
+                messages.append(contentsOf: conversationHistory)
+                messages.append(AIMessage(role: "user", content: input))
+
+                // Add the user message to history
+                conversationHistory.append(AIMessage(role: "user", content: input))
 
                 let request = AIRequest(
                     messages: messages,
@@ -65,6 +83,14 @@ class AgentBridge {
                             let finalContent = response.content.isEmpty ? accumulatedContent : response.content
 
                             await self.endOutputBlock()
+
+                            // Add assistant response to history
+                            self.conversationHistory.append(AIMessage(role: "assistant", content: finalContent))
+
+                            // Keep history manageable (last 10 exchanges)
+                            if self.conversationHistory.count > 20 {
+                                self.conversationHistory.removeFirst(2)
+                            }
 
                             let commands: [String]?
                             if mode == .agent {
@@ -132,55 +158,50 @@ class AgentBridge {
             if match.numberOfRanges > 1 {
                 let commandRange = match.range(at: 1)
                 let commandBlock = nsContent.substring(with: commandRange)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
 
-                let lines = commandBlock.components(separatedBy: .newlines)
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-
-                commands.append(contentsOf: lines)
+                // Keep the entire code block as a single command
+                // This preserves multi-line commands, line continuations, and JSON arguments
+                if !commandBlock.isEmpty && !commandBlock.hasPrefix("#") {
+                    commands.append(commandBlock)
+                }
             }
         }
 
         return commands
     }
 
+    /// Execute a command by sending it to the terminal as user input
+    /// This sends the command to the actual terminal PTY, so it runs in the shell
     func executeCommand(_ command: String, completion: @escaping (Result<CommandResult, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        Task { @MainActor in
+            guard let surface = self.surface.surface else {
+                completion(.failure(AgentError.processingFailed))
+                return
+            }
 
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-c", command]
+            // Show what we're about to execute
+            self.appendToCurrentBlock("\n\n**Executing:** `\(command)`\n")
 
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
-            process.standardOutput = outputPipe
-            process.standardError = errorPipe
+            // Send the command to the terminal with carriage return to execute it
+            // Use \r (carriage return) not \n (newline) - this is what Enter key sends
+            let commandWithCR = command + "\r"
+            let success = commandWithCR.withCString { ptr in
+                ghostty_agent_send_input(surface, ptr, commandWithCR.utf8.count)
+            }
 
-            do {
-                try process.run()
-                process.waitUntilExit()
-
-                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-                let output = String(data: outputData, encoding: .utf8) ?? ""
-                let error = String(data: errorData, encoding: .utf8) ?? ""
-
+            if success {
+                // Command was sent successfully
+                // For now, we report success immediately since the command is running in the terminal
+                // The user can see the output directly in the terminal
                 let result = CommandResult(
-                    output: output,
-                    error: error,
-                    exitCode: Int(process.terminationStatus)
+                    output: "Command sent to terminal. Output visible in terminal below.",
+                    error: "",
+                    exitCode: 0
                 )
-
-                Task { @MainActor in
-                    self.appendToCurrentBlock("\n\n```\n$ \(command)\n\(output)\(error)```\n")
-                }
-
                 completion(.success(result))
-
-            } catch {
-                completion(.failure(error))
+            } else {
+                completion(.failure(AgentError.processingFailed))
             }
         }
     }

@@ -1180,6 +1180,25 @@ bool ghostty_agent_write_output(
     size_t text_len
 );
 
+// Send input to terminal as if user typed it (for command execution)
+// This sends text to the PTY and executes in the actual terminal
+bool ghostty_agent_send_input(
+    ghostty_surface_t surface,
+    const char* text,
+    size_t text_len
+);
+
+// Read recent terminal output (last N lines of scrollback)
+// Returns allocated string that must be freed with ghostty_agent_free_text
+// Returns NULL on failure
+char* ghostty_agent_read_output(
+    ghostty_surface_t surface,
+    int num_lines
+);
+
+// Free text allocated by ghostty_agent_read_output
+void ghostty_agent_free_text(char* text);
+
 // Get current cursor row Y position
 int ghostty_agent_get_cursor_row(ghostty_surface_t surface);
 

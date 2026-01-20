@@ -162,11 +162,14 @@ class AgentPaneViewModel: ObservableObject {
         saveConfig()
     }
 
+    private var lastExecutedCommands: [String] = []
+
     func executeCommands() {
         guard !pendingCommands.isEmpty else { return }
 
         let commandsToExecute = pendingCommands
         pendingCommands.removeAll()
+        lastExecutedCommands = commandsToExecute
 
         isProcessing = true
 
@@ -175,7 +178,8 @@ class AgentPaneViewModel: ObservableObject {
 
         func executeNext() {
             guard executedCount < totalCommands else {
-                isProcessing = false
+                // All commands executed - trigger continuation after delay
+                self.scheduleAgentContinuation()
                 return
             }
 
@@ -186,21 +190,15 @@ class AgentPaneViewModel: ObservableObject {
                 guard let self = self else { return }
 
                 switch result {
-                case .success(let cmdResult):
-                    let message = AgentOutputMessage(
-                        mode: .agent,
-                        query: nil,
-                        content: "Executed: `\(command)`\n\nOutput:\n```\n\(cmdResult.output)\(cmdResult.error)```\n\nExit code: \(cmdResult.exitCode)",
-                        commands: nil,
-                        isProcessing: false
-                    )
-                    self.outputBlocks.append(message)
+                case .success:
+                    // Command sent to terminal successfully
+                    break
 
                 case .failure(let error):
                     let message = AgentOutputMessage(
                         mode: .agent,
                         query: nil,
-                        content: "Failed to execute: `\(command)`\n\nError: \(error.localizedDescription)",
+                        content: "❌ Failed to send command: `\(command)`\n\nError: \(error.localizedDescription)",
                         commands: nil,
                         isProcessing: false
                     )
@@ -212,6 +210,68 @@ class AgentPaneViewModel: ObservableObject {
         }
 
         executeNext()
+    }
+
+    private func scheduleAgentContinuation() {
+        // Wait for command output, then continue the agent loop
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self = self, self.mode == .agent else {
+                self?.isProcessing = false
+                return
+            }
+
+            // Send continuation - assume success and continue unless user intervenes
+            let commandSummary = self.lastExecutedCommands.count == 1
+                ? "Command executed"
+                : "\(self.lastExecutedCommands.count) commands executed"
+
+            let continuationPrompt = """
+            \(commandSummary). Continue with the next command to complete the task.
+            If done, respond only: "Task complete."
+            """
+
+            self.submitContinuation(continuationPrompt)
+        }
+    }
+
+    private func submitContinuation(_ prompt: String) {
+        guard bridge != nil else {
+            isProcessing = false
+            return
+        }
+
+        bridge?.processInput(prompt, mode: mode, model: selectedModel) { [weak self] result in
+            guard let self = self else { return }
+
+            self.isProcessing = false
+
+            switch result {
+            case .success(let response):
+                let responseBlock = AgentOutputMessage(
+                    mode: self.mode,
+                    query: nil,
+                    content: response.content,
+                    commands: response.commands,
+                    isProcessing: false
+                )
+                self.outputBlocks.append(responseBlock)
+
+                // If new commands, queue them for approval
+                if let commands = response.commands, !commands.isEmpty && self.mode == .agent {
+                    self.pendingCommands = commands
+                }
+
+            case .failure(let error):
+                let errorBlock = AgentOutputMessage(
+                    mode: self.mode,
+                    query: nil,
+                    content: "❌ Error: \(error.localizedDescription)",
+                    commands: nil,
+                    isProcessing: false
+                )
+                self.outputBlocks.append(errorBlock)
+            }
+        }
     }
 
     func rejectCommands() {
@@ -230,6 +290,7 @@ class AgentPaneViewModel: ObservableObject {
         outputBlocks.removeAll()
         richBlocks.removeAll()
         currentRichBlockId = nil
+        bridge?.clearHistory()
     }
 
     // MARK: - Rich Block Management

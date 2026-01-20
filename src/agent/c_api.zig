@@ -114,6 +114,54 @@ export fn ghostty_agent_write_output(
     return true;
 }
 
+/// Send input to the terminal as if the user typed it
+/// This writes to the PTY input and will execute commands in the shell
+export fn ghostty_agent_send_input(
+    surface_ptr: *anyopaque,
+    text: [*:0]const u8,
+    text_len: usize,
+) bool {
+    const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
+    const termio = @import("../termio.zig");
+    
+    // Get the actual text slice
+    const input = text[0..text_len];
+    
+    // Queue a direct write to the PTY via the public io interface
+    const msg = termio.Message.writeReq(surface.alloc, input) catch |err| {
+        std.debug.print("❌ Failed to create write message: {}\n", .{err});
+        return false;
+    };
+    
+    // Use io.queueMessage to send to the termio thread
+    surface.io.queueMessage(msg, .unlocked);
+    return true;
+}
+
+/// Read recent terminal output (last num_lines lines)
+/// Returns allocated C string that must be freed with ghostty_agent_free_text
+/// TODO: Implement proper terminal screen reading
+export fn ghostty_agent_read_output(
+    surface_ptr: *anyopaque,
+    num_lines: c_int,
+) ?[*:0]u8 {
+    _ = surface_ptr;
+    _ = num_lines;
+    // For now, return a placeholder - full implementation requires deep terminal internals
+    const placeholder = "(Terminal output reading not yet implemented)";
+    const result = std.heap.c_allocator.allocSentinel(u8, placeholder.len, 0) catch return null;
+    @memcpy(result, placeholder);
+    return result;
+}
+
+/// Free text allocated by ghostty_agent_read_output
+export fn ghostty_agent_free_text(text: ?[*:0]u8) void {
+    if (text) |t| {
+        const len = std.mem.len(t);
+        std.heap.c_allocator.free(t[0 .. len + 1]);
+    }
+}
+
 /// Get current cursor row Y position
 export fn ghostty_agent_get_cursor_row(surface_ptr: *anyopaque) c_int {
     const surface: *Surface = @ptrCast(@alignCast(surface_ptr));
