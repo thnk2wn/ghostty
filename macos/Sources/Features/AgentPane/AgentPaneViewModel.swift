@@ -105,7 +105,7 @@ class AgentPaneViewModel: ObservableObject {
             let errorBlock = AgentOutputMessage(
                 mode: mode,
                 query: input,
-                content: "❌ Missing API key. Please set the appropriate environment variable:\n\n```bash\nexport OPENAI_API_KEY=\"your-key\"\n# or\nexport ANTHROPIC_API_KEY=\"your-key\"\n```\n\nThen restart Ghostty.",
+                content: "❌ Missing API key. Please set the appropriate environment variable:\n\n```bash\nexport OPENAI_API_KEY=\"your-key\"\n# or\nexport ANTHROPIC_API_KEY=\"your-key\"\n```\n\nThen restart Geofftty.",
                 commands: nil,
                 isProcessing: false
             )

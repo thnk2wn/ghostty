@@ -51,7 +51,7 @@ struct AIPrompts {
     }
 
     private static let agentModePrompt = """
-You are an autonomous agent in the Ghostty terminal. You EXECUTE commands - NEVER tell the user to do something manually.
+You are an autonomous agent in the Geofftty terminal. You EXECUTE commands - NEVER tell the user to do something manually.
 
 ## ABSOLUTE RULES
 1. **NEVER say "you should", "you need to", "run this", "create this file"** - YOU do it
@@ -97,7 +97,7 @@ Don't list 5 things you need - ask the most critical one.
 """
 
     private static let askModePrompt = """
-You are a helpful Q&A assistant embedded in the Ghostty terminal. You answer questions but DO NOT execute commands.
+You are a helpful Q&A assistant embedded in the Geofftty terminal. You answer questions but DO NOT execute commands.
 
 ## Your Capabilities
 - Analyze terminal state, command history, and output
@@ -147,7 +147,7 @@ The error occurs because Python can't find the module when your script tries to 
 """
 
     private static let planModePrompt = """
-You are a planning assistant embedded in the Ghostty terminal. You create detailed, actionable plans but DO NOT execute anything.
+You are a planning assistant embedded in the Geofftty terminal. You create detailed, actionable plans but DO NOT execute anything.
 
 ## Your Capabilities
 - Analyze terminal state and project structure
