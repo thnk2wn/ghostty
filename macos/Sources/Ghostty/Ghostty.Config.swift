@@ -650,6 +650,96 @@ extension Ghostty {
             _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
             return v
         }
+
+        var aiAgentProvider: String {
+            let defaultValue = "openai"
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ai-agent-provider"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return String(cString: ptr)
+        }
+
+        var aiAgentModel: String? {
+            guard let config = self.config else { return nil }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ai-agent-model"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return nil }
+            guard let ptr = v else { return nil }
+            let str = String(cString: ptr)
+            return str.isEmpty ? nil : str
+        }
+
+        var aiAgentApiKey: String? {
+            guard let config = self.config else { return nil }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ai-agent-api-key"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return nil }
+            guard let ptr = v else { return nil }
+            let str = String(cString: ptr)
+            return str.isEmpty ? nil : str
+        }
+
+        var aiAgentOllamaUrl: String {
+            let defaultValue = "http://localhost:11434"
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ai-agent-ollama-url"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return String(cString: ptr)
+        }
+
+        var aiAgentTemperature: Float {
+            guard let config = self.config else { return 0.7 }
+            var v: Float = 0.7
+            let key = "ai-agent-temperature"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var aiAgentMaxTokens: UInt32 {
+            guard let config = self.config else { return 2048 }
+            var v: UInt32 = 2048
+            let key = "ai-agent-max-tokens"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var aiAgentMode: String {
+            let defaultValue = "ask"
+            guard let config = self.config else { return defaultValue }
+            var v: UnsafePointer<Int8>? = nil
+            let key = "ai-agent-mode"
+            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return defaultValue }
+            guard let ptr = v else { return defaultValue }
+            return String(cString: ptr)
+        }
+
+        var aiAgentAllowModeSwitch: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "ai-agent-allow-mode-switch"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var aiAgentRequireApproval: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "ai-agent-require-approval"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
+
+        var aiAgentShowReasoning: Bool {
+            guard let config = self.config else { return true }
+            var v = true
+            let key = "ai-agent-show-reasoning"
+            _ = ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8)))
+            return v
+        }
     }
 }
 

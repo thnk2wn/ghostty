@@ -7,26 +7,33 @@ struct AgentPaneView: View {
     @State private var showModeInfo: Bool = false
     @State private var hasConfigured: Bool = false
     @State private var inputHeight: CGFloat = 24
+    @State private var showSettings: Bool = false
     @FocusState private var inputFocused: Bool
 
     var surfaceView: Ghostty.SurfaceView?
 
     var body: some View {
         VStack(spacing: 0) {
-            // API Key warning (shows if missing)
+            // Setup banner (shows if no API key configured)
             if !viewModel.hasAPIKey {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
-                    Text("Missing API key - Set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
+                Button(action: { showSettings = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gearshape.fill")
+                            .foregroundColor(.blue)
+                        Text("AI not configured - Click to set up")
+                            .font(.caption)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.1))
+                    .frame(height: 30)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .background(Color.orange.opacity(0.1))
-                .frame(height: 30)
+                .buttonStyle(.plain)
             }
 
             // Main control bar
@@ -67,12 +74,42 @@ struct AgentPaneView: View {
 
                 Spacer()
 
-                // Model selector
+                // Model selector with settings option
                 Menu {
-                    ForEach(viewModel.availableModels, id: \.self) { model in
-                        Button(model) {
-                            viewModel.selectedModel = model
+                    // Available models section
+                    let allModels = AgentConfig.allModels()
+                    let availableModels = allModels.filter { $0.isAvailable }
+                    let unavailableModels = allModels.filter { !$0.isAvailable }
+
+                    ForEach(availableModels) { model in
+                        Button(model.displayName) {
+                            viewModel.selectedModel = model.id
                         }
+                    }
+
+                    if !unavailableModels.isEmpty {
+                        Divider()
+
+                        // Greyed out models without API keys
+                        ForEach(unavailableModels) { model in
+                            Button(action: { showSettings = true }) {
+                                HStack {
+                                    Text(model.displayName)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("No API key")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // Settings option
+                    Button(action: { showSettings = true }) {
+                        Label("AI Settings...", systemImage: "gearshape")
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -133,6 +170,12 @@ struct AgentPaneView: View {
         }
         .onChange(of: surfaceView?.id) { _ in
             tryConfigureSurface()
+        }
+        .sheet(isPresented: $showSettings) {
+            AISettingsView()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiSettingsDidChange)) { _ in
+            viewModel.checkAPIKeys()
         }
     }
 

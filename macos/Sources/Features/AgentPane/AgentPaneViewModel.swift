@@ -86,8 +86,18 @@ class AgentPaneViewModel: ObservableObject {
         checkAPIKeys()
     }
 
-    private func checkAPIKeys() {
-        hasAPIKey = AgentConfig.hasValidAPIKey(for: selectedModel)
+    func checkAPIKeys() {
+        // Check if any provider has a valid API key (for banner visibility)
+        hasAPIKey = AgentConfig.hasAnyAPIKeyConfigured()
+    }
+
+    private func providerForModel(_ model: String) -> String {
+        if model.contains("claude") {
+            return "anthropic"
+        } else if model.contains("llama") || model.contains("mistral") || model.contains("codellama") || model.contains("mixtral") {
+            return "ollama"
+        }
+        return "openai"
     }
 
     func configure(surface: Ghostty.SurfaceView) {
@@ -100,12 +110,13 @@ class AgentPaneViewModel: ObservableObject {
         guard !input.isEmpty else { return }
         guard bridge != nil else { return }
 
-        checkAPIKeys()
-        guard hasAPIKey else {
+        // Check if the selected model's provider has a valid API key
+        let provider = providerForModel(selectedModel)
+        guard AgentConfig.hasValidAPIKey(for: provider) else {
             let errorBlock = AgentOutputMessage(
                 mode: mode,
                 query: input,
-                content: "❌ Missing API key. Please set the appropriate environment variable:\n\n```bash\nexport OPENAI_API_KEY=\"your-key\"\n# or\nexport ANTHROPIC_API_KEY=\"your-key\"\n```\n\nThen restart Geofftty.",
+                content: "❌ AI not configured. Click the settings banner above or select **AI Settings...** from the model dropdown to add your API key.",
                 commands: nil,
                 isProcessing: false
             )

@@ -2979,7 +2979,7 @@ keybind: Keybinds = .{},
 ///   - `plan`: Creates detailed plans without executing
 ///
 /// Available since: 1.4.0
-@"ai-agent-enabled": bool = false,
+@"ai-agent-enabled": bool = true,
 
 /// The default mode for the AI agent pane: "agent", "ask", or "plan".
 ///
