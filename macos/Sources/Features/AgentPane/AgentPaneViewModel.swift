@@ -68,17 +68,32 @@ class AgentPaneViewModel: ObservableObject {
     @Published var mode: AgentMode = .ask
     @Published var isProcessing: Bool = false
     @Published var pendingCommands: [String] = []
-    @Published var selectedModel: String = "gpt-4o-mini"
+    @Published var selectedModel: String = ""
     @Published var outputBlocks: [AgentOutputMessage] = []
     @Published var hasAPIKey: Bool = false
     @Published var useRichOverlays: Bool = true
     @Published var richBlocks: [RichAIBlock] = []
+    @Published var reasoningLevel: ReasoningLevel = .none
+    @Published var errorMessage: String? = nil
 
     private var bridge: AgentBridge?
     private var currentRichBlockId: UUID?
 
     var availableModels: [String] {
         return AgentConfig.availableModels()
+    }
+
+    /// Get available models for the current mode
+    var availableModelsForCurrentMode: [ModelInfo] {
+        return AgentConfig.availableModels(forMode: mode)
+    }
+
+    /// Check if the currently selected model supports reasoning levels
+    var selectedModelSupportsReasoning: Bool {
+        guard let model = ModelRegistry.shared.model(byId: selectedModel) else {
+            return false
+        }
+        return model.supportsReasoning
     }
 
     init() {
@@ -101,71 +116,49 @@ class AgentPaneViewModel: ObservableObject {
     }
 
     func configure(surface: Ghostty.SurfaceView) {
-        // Only configure once
-        guard bridge == nil else { return }
-        self.bridge = AgentBridge(surface: surface, viewModel: self)
+        // Create or update the bridge with the surface
+        if bridge == nil {
+            self.bridge = AgentBridge(surface: surface, viewModel: self)
+        }
+    }
+    
+    var isConfigured: Bool {
+        bridge != nil
     }
 
     func submitInput(_ input: String) {
         guard !input.isEmpty else { return }
-        guard bridge != nil else { return }
+        
+        // Clear any previous error
+        errorMessage = nil
+        
+        guard bridge != nil else {
+            errorMessage = "Terminal not ready. Please wait a moment and try again."
+            return
+        }
 
         // Check if the selected model's provider has a valid API key
         let provider = providerForModel(selectedModel)
         guard AgentConfig.hasValidAPIKey(for: provider) else {
-            let errorBlock = AgentOutputMessage(
-                mode: mode,
-                query: input,
-                content: "❌ AI not configured. Click the settings banner above or select **AI Settings...** from the model dropdown to add your API key.",
-                commands: nil,
-                isProcessing: false
-            )
-            outputBlocks.append(errorBlock)
+            errorMessage = "AI not configured. Click the settings banner above or select AI Settings from the model dropdown to add your API key."
             return
         }
 
         isProcessing = true
-
-        let processingBlock = AgentOutputMessage(
-            mode: mode,
-            query: input,
-            content: nil,
-            commands: nil,
-            isProcessing: true
-        )
-        outputBlocks.append(processingBlock)
 
         bridge?.processInput(input, mode: mode, model: selectedModel) { [weak self] result in
             guard let self = self else { return }
 
             self.isProcessing = false
 
-            self.outputBlocks.removeAll { $0.id == processingBlock.id }
-
             switch result {
             case .success(let response):
-                let responseBlock = AgentOutputMessage(
-                    mode: self.mode,
-                    query: input,
-                    content: response.content,
-                    commands: response.commands,
-                    isProcessing: false
-                )
-                self.outputBlocks.append(responseBlock)
-
                 if let commands = response.commands, !commands.isEmpty && self.mode == .agent {
                     self.pendingCommands = commands
                 }
 
             case .failure(let error):
-                let errorBlock = AgentOutputMessage(
-                    mode: self.mode,
-                    query: input,
-                    content: "❌ Error: \(error.localizedDescription)",
-                    commands: nil,
-                    isProcessing: false
-                )
-                self.outputBlocks.append(errorBlock)
+                self.errorMessage = error.localizedDescription
             }
         }
 

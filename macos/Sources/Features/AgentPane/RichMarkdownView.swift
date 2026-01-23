@@ -5,6 +5,10 @@ import AppKit
 struct RichMarkdownView: View {
     let content: String
     let showLineNumbers: Bool
+    
+    // Cache parsed elements - only reparse if content hash changes
+    @State private var cachedElements: [MarkdownElement] = []
+    @State private var cachedContentHash: Int = 0
 
     init(content: String, showLineNumbers: Bool = true) {
         self.content = content
@@ -13,7 +17,7 @@ struct RichMarkdownView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(parseMarkdown().enumerated()), id: \.offset) { _, element in
+            ForEach(Array(elements.enumerated()), id: \.offset) { _, element in
                 switch element {
                 case .header(let level, let text):
                     HeaderView(level: level, text: text)
@@ -28,30 +32,71 @@ struct RichMarkdownView: View {
                 }
             }
         }
+        .onChange(of: content) { newContent in
+            updateCacheIfNeeded(newContent)
+        }
+        .onAppear {
+            updateCacheIfNeeded(content)
+        }
     }
+    
+    private var elements: [MarkdownElement] {
+        // Return cached if valid
+        if content.hashValue == cachedContentHash && !cachedElements.isEmpty {
+            return cachedElements
+        }
+        // Fallback - parse inline (will be cached on next onChange)
+        return MarkdownParser.parse(content)
+    }
+    
+    private func updateCacheIfNeeded(_ newContent: String) {
+        let newHash = newContent.hashValue
+        if newHash != cachedContentHash {
+            cachedContentHash = newHash
+            cachedElements = MarkdownParser.parse(newContent)
+        }
+    }
+}
 
-    private func parseMarkdown() -> [MarkdownElement] {
+// MARK: - Markdown Elements
+
+enum MarkdownElement {
+    case header(level: Int, text: String)
+    case paragraph(text: String)
+    case codeBlock(language: String, code: String)
+    case list(items: [(number: Int, text: String)], ordered: Bool)
+    case blockQuote(text: String)
+}
+
+// MARK: - Markdown Parser (extracted for caching)
+
+enum MarkdownParser {
+    static func parse(_ content: String) -> [MarkdownElement] {
         var elements: [MarkdownElement] = []
-        var lines = content.components(separatedBy: "\n")
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
         var index = 0
 
         while index < lines.count {
             let line = lines[index]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = trimWhitespace(line)
 
             // Code block
             if trimmed.hasPrefix("```") {
-                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                let language = String(trimmed.dropFirst(3))
                 var codeLines: [String] = []
                 index += 1
 
-                while index < lines.count && !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    codeLines.append(lines[index])
+                while index < lines.count {
+                    let codeLine = lines[index]
+                    if trimWhitespace(codeLine).hasPrefix("```") {
+                        index += 1
+                        break
+                    }
+                    codeLines.append(codeLine)
                     index += 1
                 }
 
                 elements.append(.codeBlock(language: language, code: codeLines.joined(separator: "\n")))
-                index += 1
                 continue
             }
 
@@ -78,10 +123,10 @@ struct RichMarkdownView: View {
             }
 
             // Block quote
-            if trimmed.hasPrefix("> ") {
+            if trimmed.hasPrefix("> ") || trimmed == ">" {
                 var quoteLines: [String] = []
                 while index < lines.count {
-                    let qLine = lines[index].trimmingCharacters(in: .whitespaces)
+                    let qLine = trimWhitespace(lines[index])
                     if qLine.hasPrefix("> ") {
                         quoteLines.append(String(qLine.dropFirst(2)))
                         index += 1
@@ -100,7 +145,7 @@ struct RichMarkdownView: View {
             if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
                 var listItems: [(number: Int, text: String)] = []
                 while index < lines.count {
-                    let lLine = lines[index].trimmingCharacters(in: .whitespaces)
+                    let lLine = trimWhitespace(lines[index])
                     if lLine.hasPrefix("- ") {
                         listItems.append((number: listItems.count + 1, text: String(lLine.dropFirst(2))))
                         index += 1
@@ -118,16 +163,15 @@ struct RichMarkdownView: View {
                 continue
             }
 
-            // Ordered list - extract actual number from markdown
-            if let _ = trimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) {
-                var listItems: [(number: Int, text: String)] = []
+            // Ordered list
+            if let (num, textAfterDot) = parseOrderedListItem(trimmed) {
+                var listItems: [(number: Int, text: String)] = [(number: num, text: textAfterDot)]
+                index += 1
+                
                 while index < lines.count {
-                    let lLine = lines[index].trimmingCharacters(in: .whitespaces)
-                    if let match = lLine.range(of: #"^(\d+)\.\s+"#, options: .regularExpression),
-                       let numMatch = lLine.range(of: #"^\d+"#, options: .regularExpression) {
-                        let numStr = String(lLine[numMatch])
-                        let num = Int(numStr) ?? (listItems.count + 1)
-                        listItems.append((number: num, text: String(lLine[match.upperBound...])))
+                    let lLine = trimWhitespace(lines[index])
+                    if let (itemNum, itemText) = parseOrderedListItem(lLine) {
+                        listItems.append((number: itemNum, text: itemText))
                         index += 1
                     } else if lLine.isEmpty {
                         index += 1
@@ -150,7 +194,7 @@ struct RichMarkdownView: View {
             var paragraphLines: [String] = []
             while index < lines.count {
                 let pLine = lines[index]
-                let pTrimmed = pLine.trimmingCharacters(in: .whitespaces)
+                let pTrimmed = trimWhitespace(pLine)
 
                 if pTrimmed.isEmpty ||
                    pTrimmed.hasPrefix("#") ||
@@ -158,7 +202,7 @@ struct RichMarkdownView: View {
                    pTrimmed.hasPrefix("> ") ||
                    pTrimmed.hasPrefix("- ") ||
                    pTrimmed.hasPrefix("* ") ||
-                   pTrimmed.range(of: #"^\d+\.\s+"#, options: .regularExpression) != nil {
+                   parseOrderedListItem(pTrimmed) != nil {
                     break
                 }
 
@@ -173,16 +217,58 @@ struct RichMarkdownView: View {
 
         return elements
     }
-}
-
-// MARK: - Markdown Elements
-
-enum MarkdownElement {
-    case header(level: Int, text: String)
-    case paragraph(text: String)
-    case codeBlock(language: String, code: String)
-    case list(items: [(number: Int, text: String)], ordered: Bool)
-    case blockQuote(text: String)
+    
+    /// Fast whitespace trimming without CharacterSet allocation
+    private static func trimWhitespace(_ s: String) -> String {
+        var start = s.startIndex
+        var end = s.endIndex
+        
+        while start < end && (s[start] == " " || s[start] == "\t") {
+            start = s.index(after: start)
+        }
+        
+        while end > start {
+            let prev = s.index(before: end)
+            if s[prev] == " " || s[prev] == "\t" {
+                end = prev
+            } else {
+                break
+            }
+        }
+        
+        return start < end ? String(s[start..<end]) : ""
+    }
+    
+    /// Parse ordered list item like "1. text"
+    private static func parseOrderedListItem(_ line: String) -> (Int, String)? {
+        guard !line.isEmpty else { return nil }
+        
+        var idx = line.startIndex
+        
+        // Must start with digit
+        guard line[idx].isASCII && line[idx].isNumber else { return nil }
+        
+        // Collect digits
+        var numEnd = idx
+        while numEnd < line.endIndex && line[numEnd].isASCII && line[numEnd].isNumber {
+            numEnd = line.index(after: numEnd)
+        }
+        
+        // Must have "." after digits
+        guard numEnd < line.endIndex, line[numEnd] == "." else { return nil }
+        
+        let afterDot = line.index(after: numEnd)
+        
+        // Must have space after dot
+        guard afterDot < line.endIndex, line[afterDot] == " " else { return nil }
+        
+        guard let num = Int(line[idx..<numEnd]) else { return nil }
+        
+        let textStart = line.index(after: afterDot)
+        let text = textStart < line.endIndex ? String(line[textStart...]) : ""
+        
+        return (num, text)
+    }
 }
 
 // MARK: - Header View

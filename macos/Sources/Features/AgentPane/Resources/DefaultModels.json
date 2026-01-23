@@ -1,0 +1,76 @@
+{
+  "providers": [
+    {
+      "id": "openai",
+      "displayName": "OpenAI",
+      "requiresApiKey": true,
+      "models": [
+        {
+          "id": "gpt-5.2",
+          "displayName": "GPT-5",
+          "supportsReasoning": false
+        },
+        {
+          "id": "gpt-5-mini",
+          "displayName": "GPT-5 mini",
+          "supportsReasoning": false
+        },
+        {
+          "id": "gpt-5-nano",
+          "displayName": "GPT-5 nano",
+          "supportsReasoning": false
+        },
+        {
+          "id": "gpt-5.2-codex",
+          "displayName": "GPT-5.2 (codex)",
+          "supportsReasoning": true,
+          "reasoningLevels": ["none", "low", "medium", "high", "xhigh"]
+        }
+      ]
+    },
+    {
+      "id": "anthropic",
+      "displayName": "Anthropic",
+      "requiresApiKey": true,
+      "models": [
+        {
+          "id": "claude-sonnet-4-5",
+          "displayName": "Claude Sonnet 4.5",
+          "supportsReasoning": false
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "displayName": "Claude Haiku 4.5",
+          "supportsReasoning": false
+        },
+        {
+          "id": "claude-opus-4-5",
+          "displayName": "Claude Opus 4.5",
+          "supportsReasoning": false
+        }
+      ]
+    },
+    {
+      "id": "ollama",
+      "displayName": "Ollama",
+      "requiresApiKey": false,
+      "models": [
+        {
+          "id": "llama3",
+          "displayName": "Llama 3",
+          "supportsReasoning": false
+        },
+        {
+          "id": "codellama",
+          "displayName": "Code Llama",
+          "supportsReasoning": false
+        },
+        {
+          "id": "mistral",
+          "displayName": "Mistral",
+          "supportsReasoning": false
+        }
+      ]
+    }
+  ]
+}

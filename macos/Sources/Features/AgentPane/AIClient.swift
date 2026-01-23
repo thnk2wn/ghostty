@@ -78,12 +78,18 @@ enum AIClientError: Error, LocalizedError {
 
 class AIClient {
     private let session: URLSession
+    private var apiKeyCache: [String: String] = [:]
 
     init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 300
         self.session = URLSession(configuration: config)
+    }
+    
+    /// Clear cached API keys (call when user changes settings)
+    func clearKeyCache() {
+        apiKeyCache.removeAll()
     }
 
     func sendRequest(
@@ -242,66 +248,54 @@ class AIClient {
         streamHandler: ((String) -> Void)?,
         completion: @escaping (Result<AIResponse, AIClientError>) -> Void
     ) {
-        let task = session.dataTask(with: request) { data, response, error in
-            if let error = error {
-                completion(.failure(.networkError(error)))
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            guard let data = data else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                completion(.failure(.httpError(statusCode: httpResponse.statusCode, message: errorMessage)))
-                return
-            }
-
-            guard let text = String(data: data, encoding: .utf8) else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            var fullContent = ""
-            let lines = text.components(separatedBy: "\n")
-
-            for line in lines {
-                if line.hasPrefix("data: ") {
-                    let jsonStr = String(line.dropFirst(6))
-                    if jsonStr == "[DONE]" { continue }
-
-                    guard let jsonData = jsonStr.data(using: .utf8) else { continue }
-
-                    do {
-                        if isOpenAI {
-                            if let chunk = try self.parseOpenAIStreamChunk(jsonData) {
-                                fullContent += chunk
-                                streamHandler?(chunk)
-                            }
-                        } else {
-                            if let chunk = try self.parseAnthropicStreamChunk(jsonData) {
-                                fullContent += chunk
-                                streamHandler?(chunk)
+        Task {
+            do {
+                let (bytes, response) = try await session.bytes(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    await MainActor.run { completion(.failure(.invalidResponse)) }
+                    return
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    var errorData = Data()
+                    for try await byte in bytes {
+                        errorData.append(byte)
+                    }
+                    let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                    await MainActor.run { completion(.failure(.httpError(statusCode: httpResponse.statusCode, message: errorMessage))) }
+                    return
+                }
+                
+                var fullContent = ""
+                
+                // Use lines iterator for proper UTF-8 handling
+                for try await line in bytes.lines {
+                    if line.hasPrefix("data: ") {
+                        let jsonStr = String(line.dropFirst(6))
+                        if jsonStr != "[DONE]", let jsonData = jsonStr.data(using: .utf8) {
+                            if isOpenAI {
+                                if let chunk = try? self.parseOpenAIStreamChunk(jsonData) {
+                                    fullContent += chunk
+                                    streamHandler?(chunk)
+                                }
+                            } else {
+                                if let chunk = try? self.parseAnthropicStreamChunk(jsonData) {
+                                    fullContent += chunk
+                                    streamHandler?(chunk)
+                                }
                             }
                         }
-                    } catch {
-                        continue
                     }
                 }
+                
+                let aiResponse = AIResponse(content: fullContent, finishReason: "stop", usage: nil)
+                await MainActor.run { completion(.success(aiResponse)) }
+                
+            } catch {
+                await MainActor.run { completion(.failure(.networkError(error))) }
             }
-
-            let response = AIResponse(content: fullContent, finishReason: "stop", usage: nil)
-            completion(.success(response))
         }
-
-        task.resume()
     }
 
     private func parseOpenAIResponse(_ data: Data) throws -> AIResponse {
@@ -380,9 +374,25 @@ class AIClient {
         return nil
     }
 
-    /// Get API key using resolution order: Keychain -> Config file -> Environment variable
+    /// Get API key using resolution order: Cache -> Keychain -> Config file
+    /// Caches the key in memory to avoid repeated keychain access prompts
     private func getAPIKey(provider: String) -> String? {
-        return AgentConfig.getAPIKey(for: provider.lowercased())
+        let key = provider.lowercased()
+        
+        // Check cache first to avoid keychain prompts
+        if let cached = apiKeyCache[key] {
+            return cached.isEmpty ? nil : cached
+        }
+        
+        // Fetch from keychain/config and cache the result
+        if let apiKey = AgentConfig.getAPIKey(for: key) {
+            apiKeyCache[key] = apiKey
+            return apiKey
+        }
+        
+        // Cache empty string to avoid repeated lookups for missing keys
+        apiKeyCache[key] = ""
+        return nil
     }
 
     /// Get the Ollama base URL from config
@@ -481,59 +491,48 @@ class AIClient {
         streamHandler: ((String) -> Void)?,
         completion: @escaping (Result<AIResponse, AIClientError>) -> Void
     ) {
-        let task = session.dataTask(with: request) { data, response, error in
-            if let error = error as NSError? {
-                if error.code == NSURLErrorCannotConnectToHost || error.code == NSURLErrorTimedOut {
-                    completion(.failure(.ollamaNotRunning))
-                } else {
-                    completion(.failure(.networkError(error)))
+        Task {
+            do {
+                let (bytes, response) = try await session.bytes(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    await MainActor.run { completion(.failure(.invalidResponse)) }
+                    return
                 }
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            guard let data = data else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            guard (200...299).contains(httpResponse.statusCode) else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-                completion(.failure(.httpError(statusCode: httpResponse.statusCode, message: errorMessage)))
-                return
-            }
-
-            guard let text = String(data: data, encoding: .utf8) else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            var fullContent = ""
-            let lines = text.components(separatedBy: "\n")
-
-            for line in lines {
-                guard !line.isEmpty else { continue }
-                guard let jsonData = line.data(using: .utf8) else { continue }
-
-                do {
-                    if let chunk = try self.parseOllamaStreamChunk(jsonData) {
-                        fullContent += chunk
-                        streamHandler?(chunk)
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    var errorData = Data()
+                    for try await byte in bytes {
+                        errorData.append(byte)
                     }
-                } catch {
-                    continue
+                    let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                    await MainActor.run { completion(.failure(.httpError(statusCode: httpResponse.statusCode, message: errorMessage))) }
+                    return
+                }
+                
+                var fullContent = ""
+                
+                // Use lines iterator for proper UTF-8 handling
+                for try await line in bytes.lines {
+                    if !line.isEmpty, let jsonData = line.data(using: .utf8) {
+                        if let chunk = try? self.parseOllamaStreamChunk(jsonData) {
+                            fullContent += chunk
+                            streamHandler?(chunk)
+                        }
+                    }
+                }
+                
+                let aiResponse = AIResponse(content: fullContent, finishReason: "stop", usage: nil)
+                await MainActor.run { completion(.success(aiResponse)) }
+                
+            } catch let error as NSError {
+                if error.code == NSURLErrorCannotConnectToHost || error.code == NSURLErrorTimedOut {
+                    await MainActor.run { completion(.failure(.ollamaNotRunning)) }
+                } else {
+                    await MainActor.run { completion(.failure(.networkError(error))) }
                 }
             }
-
-            let response = AIResponse(content: fullContent, finishReason: "stop", usage: nil)
-            completion(.success(response))
         }
-
-        task.resume()
     }
 
     private func parseOllamaResponse(_ data: Data) throws -> AIResponse {

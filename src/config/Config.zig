@@ -3087,6 +3087,57 @@ keybind: Keybinds = .{},
 /// Available since: 1.4.0
 @"ai-agent-temperature": f32 = 0.7,
 
+/// Default reasoning level for models that support extended thinking.
+/// Values: "none", "low", "medium", "high", "xhigh".
+///
+/// This only applies to models that support reasoning (e.g., GPT-5.2 codex).
+/// Higher levels enable more thorough reasoning but take longer.
+///
+/// Available since: 1.5.0
+@"ai-agent-default-reasoning": ReasoningLevel = .none,
+
+/// Default model to use for Ask mode. If not set, uses the first available
+/// model enabled for Ask mode.
+///
+/// Available since: 1.5.0
+@"ai-agent-default-model-ask": ?[]const u8 = null,
+
+/// Default model to use for Agent mode. If not set, uses the first available
+/// model enabled for Agent mode.
+///
+/// Available since: 1.5.0
+@"ai-agent-default-model-agent": ?[]const u8 = null,
+
+/// Default model to use for Plan mode. If not set, uses the first available
+/// model enabled for Plan mode.
+///
+/// Available since: 1.5.0
+@"ai-agent-default-model-plan": ?[]const u8 = null,
+
+/// Comma-separated list of model IDs enabled for Ask mode.
+/// If empty, all models with valid API keys are available.
+///
+/// Example: gpt-5.2,claude-sonnet-4-5,claude-haiku-4-5
+///
+/// Available since: 1.5.0
+@"ai-agent-models-ask": ?[]const u8 = null,
+
+/// Comma-separated list of model IDs enabled for Agent mode.
+/// If empty, all models with valid API keys are available.
+///
+/// Example: gpt-5-nano,gpt-5.2-codex,claude-sonnet-4-5
+///
+/// Available since: 1.5.0
+@"ai-agent-models-agent": ?[]const u8 = null,
+
+/// Comma-separated list of model IDs enabled for Plan mode.
+/// If empty, all models with valid API keys are available.
+///
+/// Example: gpt-5.2-codex,claude-opus-4-5,claude-sonnet-4-5
+///
+/// Available since: 1.5.0
+@"ai-agent-models-plan": ?[]const u8 = null,
+
 /// Control the in-app notifications that Ghostty shows.
 ///
 /// On Linux (GTK), in-app notifications show up as toasts. Toasts appear
@@ -5199,6 +5250,24 @@ pub const ApprovalScope = enum {
     
     /// Approval decisions apply everywhere
     global,
+};
+
+/// Reasoning level for models that support extended thinking
+pub const ReasoningLevel = enum {
+    /// No extended reasoning
+    none,
+    
+    /// Low reasoning effort
+    low,
+    
+    /// Medium reasoning effort
+    medium,
+    
+    /// High reasoning effort
+    high,
+    
+    /// Extra high reasoning effort
+    xhigh,
 };
 
 /// Color represents a color using RGB.

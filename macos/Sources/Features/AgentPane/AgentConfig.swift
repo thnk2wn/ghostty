@@ -15,43 +15,52 @@ struct AgentConfig {
     var maxOutputTokens: Int
     var useRichOverlays: Bool
     var ollamaUrl: String
+    var reasoningLevel: ReasoningLevel
 
     static let `default` = AgentConfig(
         provider: "openai",
-        model: "gpt-4o",
+        model: "gpt-5.2",
         mode: .ask,
         streamResponses: true,
         temperature: 0.7,
         autoExecuteCommands: false,
         maxOutputTokens: 2048,
         useRichOverlays: true,
-        ollamaUrl: "http://localhost:11434"
+        ollamaUrl: "http://localhost:11434",
+        reasoningLevel: .none
     )
 
     /// Load configuration from Ghostty config file.
     /// Falls back to defaults if config is not available.
     static func load(from ghosttyConfig: Ghostty.Config? = nil) -> AgentConfig {
-        // Use provided config or try to get from app delegate
         let config = ghosttyConfig
 
-        // Get provider from config, but fall back if that provider has no API key
-        let configProvider = config?.aiAgentProvider ?? "openai"
-        let provider = hasValidAPIKey(for: configProvider) ? configProvider : defaultProvider()
-
-        // Use config model if set, otherwise default for the chosen provider
-        let configModel = config?.aiAgentModel
-        let model: String
-        if let m = configModel, !m.isEmpty, providerForModel(m) == provider {
-            model = m
-        } else {
-            model = defaultModel(for: provider)
-        }
-
+        // Get default mode
         let modeString = config?.aiAgentMode ?? "ask"
         let mode = AgentMode(rawValue: modeString.capitalized) ?? .ask
+
+        // Get model for the current mode from ModelRegistry
+        let registry = ModelRegistry.shared
+        let defaultModelForMode = registry.defaultModel(forMode: mode)
+
+        // Use config model if set, otherwise use mode-specific default
+        let configModel = config?.aiAgentModel
+        let model: String
+        if let m = configModel, !m.isEmpty {
+            model = m
+        } else {
+            model = defaultModelForMode
+        }
+
+        // Determine provider from model
+        let provider = providerForModel(model)
+
         let temperature = Double(config?.aiAgentTemperature ?? 0.7)
         let maxTokens = Int(config?.aiAgentMaxTokens ?? 2048)
         let ollamaUrl = config?.aiAgentOllamaUrl ?? "http://localhost:11434"
+
+        // Load reasoning level
+        let reasoningLevel = registry.defaultReasoningLevel
 
         // useRichOverlays is still stored in UserDefaults as it's a UI preference
         let useRichOverlays = UserDefaults.standard.object(forKey: "agentUseRichOverlays") as? Bool ?? true
@@ -65,7 +74,8 @@ struct AgentConfig {
             autoExecuteCommands: false,
             maxOutputTokens: maxTokens,
             useRichOverlays: useRichOverlays,
-            ollamaUrl: ollamaUrl
+            ollamaUrl: ollamaUrl,
+            reasoningLevel: reasoningLevel
         )
     }
 
@@ -80,8 +90,13 @@ struct AgentConfig {
         return "ollama"
     }
 
-    /// Determine provider for a given model name.
-    private static func providerForModel(_ model: String) -> String {
+    /// Determine provider for a given model name using ModelRegistry.
+    static func providerForModel(_ model: String) -> String {
+        // First check ModelRegistry
+        if let modelDef = ModelRegistry.shared.model(byId: model) {
+            return modelDef.provider
+        }
+        // Fallback to string matching for custom models
         if model.contains("claude") {
             return "anthropic"
         } else if model.contains("llama") || model.contains("mistral") || model.contains("codellama") || model.contains("mixtral") {
@@ -90,11 +105,17 @@ struct AgentConfig {
         return "openai"
     }
 
+    /// Get default model for a mode from ModelRegistry
+    static func defaultModel(forMode mode: AgentMode) -> String {
+        return ModelRegistry.shared.defaultModel(forMode: mode)
+    }
+
+    /// Get default model for a provider (legacy fallback)
     private static func defaultModel(for provider: String) -> String {
         switch provider {
-        case "anthropic": return "claude-3-5-sonnet-latest"
+        case "anthropic": return "claude-sonnet-4-5"
         case "ollama": return "llama3"
-        default: return "gpt-4o"
+        default: return "gpt-5.2"
         }
     }
 
@@ -175,48 +196,35 @@ struct AgentConfig {
 
     /// Returns all known models, with availability status based on API key presence.
     static func allModels() -> [ModelInfo] {
-        var models: [ModelInfo] = []
-
-        let hasOpenAI = hasValidAPIKey(for: "openai")
-        let hasAnthropic = hasValidAPIKey(for: "anthropic")
-        let hasOllama = true // Ollama doesn't require API key
-
-        // OpenAI models
-        for model in ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"] {
-            models.append(ModelInfo(
-                id: model,
-                provider: "openai",
-                displayName: model,
-                isAvailable: hasOpenAI
-            ))
+        let registry = ModelRegistry.shared
+        return registry.allModels.map { model in
+            ModelInfo(
+                id: model.id,
+                provider: model.provider,
+                displayName: model.displayName,
+                isAvailable: hasValidAPIKey(for: model.provider),
+                supportsReasoning: model.supportsReasoning
+            )
         }
-
-        // Anthropic models
-        for model in ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-latest"] {
-            models.append(ModelInfo(
-                id: model,
-                provider: "anthropic",
-                displayName: model,
-                isAvailable: hasAnthropic
-            ))
-        }
-
-        // Ollama models
-        for model in ["llama3", "codellama", "mistral"] {
-            models.append(ModelInfo(
-                id: model,
-                provider: "ollama",
-                displayName: model,
-                isAvailable: hasOllama
-            ))
-        }
-
-        return models
     }
 
     /// Returns only the models that are available (have valid API keys).
     static func availableModels() -> [String] {
         return allModels().filter { $0.isAvailable }.map { $0.id }
+    }
+
+    /// Returns models available for a specific mode (enabled and have API keys).
+    static func availableModels(forMode mode: AgentMode) -> [ModelInfo] {
+        let registry = ModelRegistry.shared
+        return registry.availableModelsForMode(mode).map { model in
+            ModelInfo(
+                id: model.id,
+                provider: model.provider,
+                displayName: model.displayName,
+                isAvailable: true,
+                supportsReasoning: model.supportsReasoning
+            )
+        }
     }
 
     /// Returns true if user has configured AI settings (any provider).
@@ -249,6 +257,7 @@ struct ModelInfo: Identifiable {
     let provider: String
     let displayName: String
     let isAvailable: Bool
+    var supportsReasoning: Bool = false
 }
 
 // MARK: - AgentPaneViewModel Extension
@@ -263,14 +272,47 @@ extension AgentPaneViewModel {
         let config = AgentConfig.load()
         #endif
 
-        self.selectedModel = config.model
         self.mode = config.mode
         self.useRichOverlays = config.useRichOverlays
+        self.reasoningLevel = config.reasoningLevel
+
+        // Get available models for current mode (must have API key)
+        let availableForMode = AgentConfig.availableModels(forMode: self.mode)
+
+        // Try to use mode default if available, otherwise first available model
+        let registry = ModelRegistry.shared
+        let modeDefault = registry.defaultModel(forMode: self.mode)
+
+        if !modeDefault.isEmpty && availableForMode.contains(where: { $0.id == modeDefault }) {
+            self.selectedModel = modeDefault
+        } else if let firstAvailable = availableForMode.first {
+            self.selectedModel = firstAvailable.id
+        } else {
+            // No models available - use Ollama as fallback (doesn't need API key)
+            self.selectedModel = "llama3"
+        }
     }
 
     func saveConfig() {
         // Only save UI preferences to UserDefaults
         // Model/provider changes go through AISettingsView -> config file
         UserDefaults.standard.set(useRichOverlays, forKey: "agentUseRichOverlays")
+    }
+
+    /// Update model selection when mode changes
+    func updateModelForMode() {
+        let availableForMode = AgentConfig.availableModels(forMode: self.mode)
+
+        // If current model is not available for this mode, switch to mode's default or first available
+        if !availableForMode.contains(where: { $0.id == selectedModel }) {
+            let registry = ModelRegistry.shared
+            let defaultForMode = registry.defaultModel(forMode: self.mode)
+
+            if !defaultForMode.isEmpty && availableForMode.contains(where: { $0.id == defaultForMode }) {
+                selectedModel = defaultForMode
+            } else if let firstAvailable = availableForMode.first {
+                selectedModel = firstAvailable.id
+            }
+        }
     }
 }

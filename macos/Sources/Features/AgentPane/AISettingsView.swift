@@ -21,110 +21,24 @@ struct AISettingsView: View {
 
             Divider()
 
-            // Content
-            Form {
-                Section {
-                    Picker("Provider", selection: $viewModel.selectedProvider) {
-                        ForEach(AIProvider.allCases) { provider in
-                            Text(provider.displayName).tag(provider)
-                        }
-                    }
-                    .onChange(of: viewModel.selectedProvider) { _ in
-                        viewModel.loadKeyForProvider()
-                    }
-                }
-
-                Section {
-                    if viewModel.selectedProvider.requiresApiKey {
-                        HStack {
-                            SecureField("API Key", text: $viewModel.apiKey)
-                                .textFieldStyle(.roundedBorder)
-
-                            Button(action: viewModel.testConnection) {
-                                if viewModel.isTesting {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                        .frame(width: 50)
-                                } else {
-                                    Text("Test")
-                                        .frame(width: 50)
-                                }
-                            }
-                            .disabled(viewModel.apiKey.isEmpty || viewModel.isTesting)
-                        }
-
-                        if viewModel.hasKeychainKey {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.shield.fill")
-                                    .foregroundColor(.green)
-                                    .font(.caption)
-                                Text("Stored in Keychain")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        if let status = viewModel.connectionStatus {
-                            HStack(spacing: 4) {
-                                Image(systemName: status.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundColor(status.isSuccess ? .green : .red)
-                                    .font(.caption)
-                                Text(status.message)
-                                    .font(.caption)
-                                    .foregroundColor(status.isSuccess ? .green : .red)
-                            }
-                        }
-                    } else {
-                        Text("No API key required for \(viewModel.selectedProvider.displayName)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text("Authentication")
-                }
-
-                if viewModel.selectedProvider == .ollama {
-                    Section {
-                        TextField("Base URL", text: $viewModel.ollamaUrl)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Default: http://localhost:11434")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } header: {
-                        Text("Ollama Server")
-                    }
-                }
-
-                Section {
-                    Picker("Model", selection: $viewModel.selectedModel) {
-                        ForEach(viewModel.availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
+            // Content - Tabbed interface
+            TabView {
+                ModelsTab(viewModel: viewModel)
+                    .tabItem {
+                        Label("Models", systemImage: "cpu")
                     }
 
-                    if viewModel.selectedProvider == .ollama {
-                        TextField("Custom model name", text: $viewModel.customModelName)
-                            .textFieldStyle(.roundedBorder)
-                        Text("Enter the name of any model you've pulled with `ollama pull`")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                ProvidersTab(viewModel: viewModel)
+                    .tabItem {
+                        Label("Providers", systemImage: "key")
                     }
-                } header: {
-                    Text("Model")
-                }
             }
-            .formStyle(.grouped)
-            .frame(minWidth: 400, minHeight: 350)
+            .frame(minWidth: 500, minHeight: 450)
 
             Divider()
 
             // Footer with save button
             HStack {
-                Button("Delete Key", role: .destructive) {
-                    viewModel.deleteKey()
-                }
-                .disabled(!viewModel.hasKeychainKey)
-
                 Spacer()
 
                 Button("Cancel") {
@@ -137,36 +51,325 @@ struct AISettingsView: View {
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.selectedProvider.requiresApiKey && viewModel.apiKey.isEmpty)
             }
             .padding()
         }
-        .frame(width: 450)
+        .frame(width: 550)
         .onAppear {
-            viewModel.loadKeyForProvider()
+            viewModel.loadSettings()
         }
+    }
+}
+
+// MARK: - Models Tab
+
+struct ModelsTab: View {
+    @ObservedObject var viewModel: AISettingsViewModel
+
+    var body: some View {
+        Form {
+            // Defaults Section
+            Section {
+                Picker("Default Mode", selection: $viewModel.defaultMode) {
+                    ForEach(AgentMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+
+                Picker("Default Reasoning", selection: $viewModel.defaultReasoningLevel) {
+                    ForEach(ReasoningLevel.allCases) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+                .help("Reasoning level for models that support it (e.g., GPT-5.2 codex)")
+            } header: {
+                Text("Defaults")
+            }
+
+            // Models by Mode Section
+            Section {
+                Picker("Configure models for", selection: $viewModel.selectedModeForConfig) {
+                    ForEach(AgentMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 8)
+
+                // Default model for this mode
+                Picker("Default model", selection: Binding(
+                    get: { viewModel.defaultModelForSelectedMode },
+                    set: { viewModel.setDefaultModel($0, forMode: viewModel.selectedModeForConfig) }
+                )) {
+                    ForEach(viewModel.enabledModelsForSelectedMode, id: \.id) { model in
+                        Text(model.displayName).tag(model.id)
+                    }
+                }
+                .disabled(viewModel.enabledModelsForSelectedMode.isEmpty)
+            } header: {
+                Text("Models by Mode")
+            }
+
+            // Model list grouped by provider
+            ForEach(viewModel.providers) { provider in
+                Section {
+                    ForEach(viewModel.modelsForProvider(provider.id)) { model in
+                        ModelToggleRow(
+                            model: model,
+                            isEnabled: viewModel.isModelEnabled(model.id),
+                            hasAPIKey: viewModel.hasAPIKey(for: provider.id),
+                            onToggle: { viewModel.toggleModel(model.id) }
+                        )
+                    }
+                } header: {
+                    HStack {
+                        Text(provider.displayName)
+                        if !viewModel.hasAPIKey(for: provider.id) && provider.requiresApiKey {
+                            Text("(No API key)")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct ModelToggleRow: View {
+    let model: ModelDefinition
+    let isEnabled: Bool
+    let hasAPIKey: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack {
+            Toggle(isOn: Binding(
+                get: { isEnabled },
+                set: { _ in onToggle() }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                        if model.supportsReasoning {
+                            Text("Reasoning")
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.purple.opacity(0.2))
+                                .foregroundColor(.purple)
+                                .cornerRadius(3)
+                        }
+                    }
+                    Text(model.id)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .disabled(!hasAPIKey)
+        }
+        .opacity(hasAPIKey ? 1.0 : 0.5)
+    }
+}
+
+// MARK: - Providers Tab
+
+struct ProvidersTab: View {
+    @ObservedObject var viewModel: AISettingsViewModel
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Provider", selection: $viewModel.selectedProvider) {
+                    ForEach(AIProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .onChange(of: viewModel.selectedProvider) { _ in
+                    viewModel.loadKeyForProvider()
+                }
+            }
+
+            Section {
+                if viewModel.selectedProvider.requiresApiKey {
+                    HStack {
+                        SecureField("API Key", text: Binding(
+                            get: { viewModel.apiKey },
+                            set: { newValue in
+                                viewModel.apiKey = newValue
+                                // Track pending key for this provider so models become available immediately
+                                viewModel.pendingApiKeys[viewModel.selectedProvider.rawValue] = newValue
+                            }
+                        ))
+                            .textFieldStyle(.roundedBorder)
+
+                        Button(action: viewModel.testConnection) {
+                            if viewModel.isTesting {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 50)
+                            } else {
+                                Text("Test")
+                                    .frame(width: 50)
+                            }
+                        }
+                        .disabled(viewModel.apiKey.isEmpty || viewModel.isTesting)
+                    }
+
+                    if viewModel.hasKeychainKey {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Stored in Keychain")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let status = viewModel.connectionStatus {
+                        HStack(spacing: 4) {
+                            Image(systemName: status.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(status.isSuccess ? .green : .red)
+                                .font(.caption)
+                            Text(status.message)
+                                .font(.caption)
+                                .foregroundColor(status.isSuccess ? .green : .red)
+                        }
+                    }
+
+                    Button("Delete Key", role: .destructive) {
+                        viewModel.deleteKey()
+                    }
+                    .disabled(!viewModel.hasKeychainKey)
+                } else {
+                    Text("No API key required for \(viewModel.selectedProvider.displayName)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Authentication")
+            }
+
+            if viewModel.selectedProvider == .ollama {
+                Section {
+                    TextField("Base URL", text: $viewModel.ollamaUrl)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Default: http://localhost:11434")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } header: {
+                    Text("Ollama Server")
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
 // MARK: - View Model
 
 class AISettingsViewModel: ObservableObject {
+    // Provider/Auth state
     @Published var selectedProvider: AIProvider = .openai
     @Published var apiKey: String = ""
     @Published var ollamaUrl: String = "http://localhost:11434"
-    @Published var selectedModel: String = "gpt-4o"
-    @Published var customModelName: String = ""
     @Published var isTesting: Bool = false
     @Published var connectionStatus: ConnectionStatus?
     @Published var hasKeychainKey: Bool = false
+
+    // Track pending (unsaved) API keys per provider
+    @Published var pendingApiKeys: [String: String] = [:]
+
+    // Model configuration state
+    @Published var defaultMode: AgentMode = .ask
+    @Published var defaultReasoningLevel: ReasoningLevel = .none
+    @Published var selectedModeForConfig: AgentMode = .ask
+    @Published var enabledModelsByMode: [String: Set<String>] = [:]
+    @Published var defaultModelByMode: [String: String] = [:]
 
     struct ConnectionStatus {
         let isSuccess: Bool
         let message: String
     }
 
-    var availableModels: [String] {
-        selectedProvider.defaultModels
+    var providers: [ProviderDefinition] {
+        ModelRegistry.shared.providers
+    }
+
+    func modelsForProvider(_ providerId: String) -> [ModelDefinition] {
+        ModelRegistry.shared.allModels.filter { $0.provider == providerId }
+    }
+
+    var enabledModelsForSelectedMode: [ModelDefinition] {
+        let enabledIds = enabledModelsByMode[selectedModeForConfig.rawValue] ?? []
+        return ModelRegistry.shared.allModels.filter { enabledIds.contains($0.id) && hasAPIKey(for: $0.provider) }
+    }
+
+    var defaultModelForSelectedMode: String {
+        defaultModelByMode[selectedModeForConfig.rawValue] ?? ""
+    }
+
+    func setDefaultModel(_ modelId: String, forMode mode: AgentMode) {
+        defaultModelByMode[mode.rawValue] = modelId
+    }
+
+    func isModelEnabled(_ modelId: String) -> Bool {
+        enabledModelsByMode[selectedModeForConfig.rawValue]?.contains(modelId) ?? false
+    }
+
+    func toggleModel(_ modelId: String) {
+        let mode = selectedModeForConfig.rawValue
+        if enabledModelsByMode[mode] == nil {
+            enabledModelsByMode[mode] = []
+        }
+
+        if enabledModelsByMode[mode]!.contains(modelId) {
+            enabledModelsByMode[mode]!.remove(modelId)
+            // If we removed the default model, pick a new one
+            if defaultModelByMode[mode] == modelId {
+                defaultModelByMode[mode] = enabledModelsByMode[mode]!.first ?? ""
+            }
+        } else {
+            enabledModelsByMode[mode]!.insert(modelId)
+            // If no default is set, use this one
+            if defaultModelByMode[mode]?.isEmpty ?? true {
+                defaultModelByMode[mode] = modelId
+            }
+        }
+    }
+
+    /// Check if a provider has a valid API key (either saved or pending in this session)
+    func hasAPIKey(for providerId: String) -> Bool {
+        // Ollama doesn't need an API key
+        if providerId == "ollama" {
+            return true
+        }
+        // Check pending (unsaved) key first
+        if let pending = pendingApiKeys[providerId], !pending.isEmpty {
+            return true
+        }
+        // Fall back to saved key check
+        return AgentConfig.hasValidAPIKey(for: providerId)
+    }
+
+    func loadSettings() {
+        let registry = ModelRegistry.shared
+
+        // Load model configuration from registry
+        enabledModelsByMode = registry.enabledModelsByMode.mapValues { Set($0) }
+        defaultModelByMode = registry.defaultModelByMode
+        defaultReasoningLevel = registry.defaultReasoningLevel
+
+        // Load default mode from config
+        if let modeStr = ConfigFileWriter.readValue(key: "ai-agent-mode"),
+           let mode = AgentMode(rawValue: modeStr.capitalized) {
+            defaultMode = mode
+        }
+
+        // Load provider key
+        loadKeyForProvider()
     }
 
     func loadKeyForProvider() {
@@ -178,11 +381,6 @@ class AISettingsViewModel: ObservableObject {
             hasKeychainKey = false
         }
         connectionStatus = nil
-
-        // Set default model for provider
-        if let firstModel = selectedProvider.defaultModels.first {
-            selectedModel = firstModel
-        }
     }
 
     func testConnection() {
@@ -267,32 +465,50 @@ class AISettingsViewModel: ObservableObject {
     }
 
     func save() {
+        // Save all pending API keys (not just the currently selected provider)
+        for (providerId, key) in pendingApiKeys {
+            if !key.isEmpty {
+                do {
+                    try KeychainHelper.save(key: key, account: providerId)
+                    AgentConfig.markProviderConfigured(providerId)
+                } catch {
+                    print("Failed to save API key to Keychain for \(providerId): \(error)")
+                }
+            }
+        }
+
+        // Also save current provider's key if it was modified
         if selectedProvider.requiresApiKey && !apiKey.isEmpty {
             do {
                 try KeychainHelper.save(key: apiKey, account: selectedProvider.keychainAccount)
                 hasKeychainKey = true
-                // Mark provider as configured so we don't need to check keychain again
                 AgentConfig.markProviderConfigured(selectedProvider.rawValue)
             } catch {
                 print("Failed to save API key to Keychain: \(error)")
             }
         }
 
-        // Save model and other settings to config file
-        let model = customModelName.isEmpty ? selectedModel : customModelName
-        ConfigFileWriter.updateValues([
-            "ai-agent-provider": selectedProvider.rawValue,
-            "ai-agent-model": model
-        ])
-
-        if selectedProvider == .ollama && !ollamaUrl.isEmpty {
+        // Save Ollama URL if configured
+        if !ollamaUrl.isEmpty {
             ConfigFileWriter.updateValues(["ai-agent-ollama-url": ollamaUrl])
         }
 
-        // Mark setup as completed so banner doesn't show anymore
+        // Update ModelRegistry with new settings
+        let registry = ModelRegistry.shared
+        registry.enabledModelsByMode = enabledModelsByMode.mapValues { Set($0) }
+        registry.defaultModelByMode = defaultModelByMode
+        registry.defaultReasoningLevel = defaultReasoningLevel
+
+        // Save to config file via registry
+        registry.saveUserConfig()
+
+        // Save default mode
+        ConfigFileWriter.updateValues(["ai-agent-mode": defaultMode.rawValue.lowercased()])
+
+        // Mark setup as completed
         AgentConfig.markSetupCompleted()
 
-        // Post notification that settings changed
+        // Post notification
         NotificationCenter.default.post(name: .aiSettingsDidChange, object: nil)
     }
 
@@ -302,7 +518,6 @@ class AISettingsViewModel: ObservableObject {
             apiKey = ""
             hasKeychainKey = false
             connectionStatus = nil
-            // Clear the configured cache
             AgentConfig.markProviderUnconfigured(selectedProvider.rawValue)
         } catch {
             print("Failed to delete API key from Keychain: \(error)")
@@ -335,17 +550,6 @@ enum AIProvider: String, CaseIterable, Identifiable {
         switch self {
         case .openai, .anthropic: return true
         case .ollama: return false
-        }
-    }
-
-    var defaultModels: [String] {
-        switch self {
-        case .openai:
-            return ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"]
-        case .anthropic:
-            return ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-latest"]
-        case .ollama:
-            return ["llama3", "codellama", "mistral", "mixtral"]
         }
     }
 }

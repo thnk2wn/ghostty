@@ -51,8 +51,8 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
     // it is non-nil.
     @State private var lastFocusedSurface: Weak<Ghostty.SurfaceView> = .init()
 
-    // AI Agent pane view model
-    @StateObject private var agentViewModel = AgentPaneViewModel()
+    // AI Agent pane view model (V2 with proper tool calling)
+    @StateObject private var agentViewModel = AgentPaneViewModelV2()
 
     // This seems like a crutch after switching from SwiftUI to AppKit lifecycle.
     @FocusState private var focused: Bool

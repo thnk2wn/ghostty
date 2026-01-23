@@ -3,7 +3,7 @@ import SwiftUI
 /// Panel that displays AI agent output blocks
 /// Positioned below the AI input, above the terminal
 struct AgentOutputOverlay: View {
-    @ObservedObject var viewModel: AgentPaneViewModel
+    @ObservedObject var viewModel: AgentPaneViewModelV2
     var surfaceView: Ghostty.SurfaceView?
 
     // Resizing state - stored in view model for persistence

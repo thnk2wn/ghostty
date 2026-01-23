@@ -189,10 +189,19 @@ struct RichAIBlockView: View {
                             .padding(.horizontal, 12)
                     }
 
-                    // Rich markdown content
+                    // Content - use simple text during streaming for performance
                     if !block.content.isEmpty {
-                        RichMarkdownView(content: block.content, showLineNumbers: true)
-                            .padding(.horizontal, 12)
+                        if block.isStreaming {
+                            // Fast plain text rendering during streaming
+                            Text(block.content)
+                                .font(.system(size: 13, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 12)
+                        } else {
+                            // Rich markdown rendering when complete
+                            RichMarkdownView(content: block.content, showLineNumbers: true)
+                                .padding(.horizontal, 12)
+                        }
                     } else if block.isStreaming {
                         HStack(spacing: 8) {
                             ProgressView()

@@ -2,7 +2,7 @@ import SwiftUI
 import Combine
 
 struct AgentPaneView: View {
-    @ObservedObject var viewModel: AgentPaneViewModel
+    @ObservedObject var viewModel: AgentPaneViewModelV2
     @State private var inputText: String = ""
     @State private var showModeInfo: Bool = false
     @State private var hasConfigured: Bool = false
@@ -48,6 +48,9 @@ struct AgentPaneView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 280)
+                    .onChange(of: viewModel.mode) { _ in
+                        viewModel.updateModelForMode()
+                    }
 
                     Button(action: { showModeInfo.toggle() }) {
                         Image(systemName: "info.circle")
@@ -74,32 +77,30 @@ struct AgentPaneView: View {
 
                 Spacer()
 
-                // Model selector with settings option
+                // Reasoning level selector (only for reasoning-capable models)
+                if viewModel.selectedModelSupportsReasoning {
+                    ReasoningLevelPicker(level: $viewModel.reasoningLevel)
+                }
+
+                // Model selector - filtered by current mode
                 Menu {
-                    // Available models section
-                    let allModels = AgentConfig.allModels()
-                    let availableModels = allModels.filter { $0.isAvailable }
-                    let unavailableModels = allModels.filter { !$0.isAvailable }
+                    let modeModels = AgentConfig.availableModels(forMode: viewModel.mode)
 
-                    ForEach(availableModels) { model in
-                        Button(model.displayName) {
-                            viewModel.selectedModel = model.id
-                        }
-                    }
-
-                    if !unavailableModels.isEmpty {
-                        Divider()
-
-                        // Greyed out models without API keys
-                        ForEach(unavailableModels) { model in
-                            Button(action: { showSettings = true }) {
+                    if modeModels.isEmpty {
+                        Text("No models enabled for \(viewModel.mode.rawValue) mode")
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(modeModels) { model in
+                            Button {
+                                viewModel.selectedModel = model.id
+                            } label: {
                                 HStack {
                                     Text(model.displayName)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Text("No API key")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                    if model.supportsReasoning {
+                                        Spacer()
+                                        Image(systemName: "brain")
+                                            .font(.caption2)
+                                    }
                                 }
                             }
                         }
@@ -113,7 +114,7 @@ struct AgentPaneView: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(viewModel.selectedModel)
+                        Text(selectedModelDisplayName)
                             .font(.caption)
                         Image(systemName: "chevron.down")
                             .font(.caption2)
@@ -139,6 +140,27 @@ struct AgentPaneView: View {
 
             Divider()
 
+            // Error banner
+            if let error = viewModel.errorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Button(action: { viewModel.errorMessage = nil }) {
+                        Image(systemName: "xmark")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.1))
+            }
+
             // Input area
             HStack(alignment: .bottom, spacing: 8) {
                 MultiLineTextFieldWrapper(
@@ -150,14 +172,20 @@ struct AgentPaneView: View {
                 )
                 .frame(height: inputHeight)
 
-                Button(action: submitInput) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(viewModel.mode.color)
+                if viewModel.isProcessing {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 24, height: 24)
+                } else {
+                    Button(action: submitInput) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(viewModel.mode.color)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inputText.isEmpty)
+                    .help("Send message (⏎)\nNew line (⇧⏎)")
                 }
-                .buttonStyle(.plain)
-                .disabled(inputText.isEmpty || viewModel.isProcessing)
-                .help("Send message (⏎)\nNew line (⇧⏎)")
             }
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 12)
@@ -176,13 +204,22 @@ struct AgentPaneView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiSettingsDidChange)) { _ in
             viewModel.checkAPIKeys()
+            viewModel.loadConfig()
         }
     }
 
-    private func tryConfigureSurface() {
-        guard !hasConfigured else { return }
+    private var selectedModelDisplayName: String {
+        if viewModel.selectedModel.isEmpty {
+            return "No model selected"
+        }
+        if let model = ModelRegistry.shared.model(byId: viewModel.selectedModel) {
+            return model.displayName
+        }
+        return viewModel.selectedModel
+    }
 
-        if let surface = surfaceView {
+    private func tryConfigureSurface() {
+        if let surface = surfaceView, !viewModel.isConfigured {
             viewModel.configure(surface: surface)
             hasConfigured = true
         }
@@ -232,6 +269,41 @@ struct ModeInfoPopover: View {
         }
         .padding()
         .frame(width: 350)
+    }
+}
+
+struct ReasoningLevelPicker: View {
+    @Binding var level: ReasoningLevel
+
+    var body: some View {
+        Menu {
+            ForEach(ReasoningLevel.allCases) { lvl in
+                Button {
+                    level = lvl
+                } label: {
+                    HStack {
+                        Text(lvl.displayName)
+                        if lvl == level {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "brain")
+                    .font(.caption)
+                Text(level.displayName)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.purple.opacity(0.15))
+            .foregroundColor(.purple)
+            .cornerRadius(4)
+        }
+        .menuStyle(.borderlessButton)
+        .help("Reasoning level for extended thinking")
     }
 }
 
@@ -410,6 +482,6 @@ struct ApprovalCodeBlockView: View {
 }
 
 #Preview {
-    AgentPaneView(viewModel: AgentPaneViewModel())
+    AgentPaneView(viewModel: AgentPaneViewModelV2())
         .frame(width: 600, height: 400)
 }

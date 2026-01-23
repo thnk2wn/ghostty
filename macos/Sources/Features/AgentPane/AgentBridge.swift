@@ -225,8 +225,13 @@ class AgentBridge {
 
         if isUsingRichOverlays {
             // Rich overlay path: create a RichAIBlock
-            guard let surface = self.surface.surface else { return }
-            let startRow = Int(ghostty_agent_get_cursor_row(surface))
+            // Use startRow 0 if surface not available yet
+            let startRow: Int
+            if let surface = self.surface.surface {
+                startRow = Int(ghostty_agent_get_cursor_row(surface))
+            } else {
+                startRow = 0
+            }
             let blockId = viewModel?.startRichBlock(mode: mode, query: query, startRow: startRow)
             self.currentRichBlockId = blockId
         } else {
