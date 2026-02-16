@@ -24,7 +24,7 @@ Add these to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) to persist acros
 
 ### Enabling the Agent
 
-Add to your Ghostty config file (`~/.config/ghostty/config`):
+Add to your Geofftty config file (`~/.config/geofftty/config`):
 
 ```
 ai-agent-enabled = true

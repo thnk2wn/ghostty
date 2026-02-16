@@ -123,7 +123,7 @@ Execute approved commands and show results.
 
 ```bash
 # Make sure config has agent enabled
-cat ~/.config/ghostty/config | grep ai-agent
+cat ~/.config/geofftty/config | grep ai-agent
 
 # Should show:
 # ai-agent-enabled = true

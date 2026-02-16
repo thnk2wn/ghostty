@@ -85,7 +85,7 @@ pub fn runInner(
     stderr: *std.Io.Writer,
 ) !u8 {
     // Setup our disk cache to the standard location
-    const cache_path = try DiskCache.defaultPath(alloc, "ghostty");
+    const cache_path = try DiskCache.defaultPath(alloc, "geofftty");
     const cache: DiskCache = .{ .path = cache_path };
 
     if (opts.clear) {

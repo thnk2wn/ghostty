@@ -75,7 +75,7 @@ pub const ApprovalStore = struct {
     /// Load approval decisions from disk
     pub fn load(self: *ApprovalStore) !void {
         // TODO: Implement persistent storage
-        // Could use XDG_STATE_HOME/ghostty/agent-approvals.json
+        // Could use XDG_STATE_HOME/geofftty/agent-approvals.json
         _ = self;
     }
     

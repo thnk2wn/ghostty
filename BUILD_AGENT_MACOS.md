@@ -100,7 +100,7 @@ If you can't install Xcode 26 immediately, you can:
 
 ## Configuration for Testing
 
-Once built, create `~/.config/ghostty/config`:
+Once built, create `~/.config/geofftty/config`:
 
 ```ini
 # Enable AI agent (minimal config)
@@ -201,8 +201,8 @@ cd /Users/jobotgeoff/repos/ghostty
 zig build
 
 # 2. Configure
-mkdir -p ~/.config/ghostty
-cat > ~/.config/ghostty/config << 'EOF'
+mkdir -p ~/.config/geofftty
+cat > ~/.config/geofftty/config << 'EOF'
 ai-agent-enabled = true
 ai-agent-provider = openai
 ai-agent-mode = ask

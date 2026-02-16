@@ -7,7 +7,7 @@ struct ConfigFileWriter {
     static var configPath: String {
         let xdgConfig = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
             ?? NSString("~/.config").expandingTildeInPath
-        return "\(xdgConfig)/ghostty/config"
+        return "\(xdgConfig)/geofftty/config"
     }
 
     /// Update a single key-value pair in the config file.

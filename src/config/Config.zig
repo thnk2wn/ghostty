@@ -528,8 +528,8 @@ pub const compatibility = std.StaticStringMap(
 /// include path separators unless it is an absolute pathname.
 ///
 /// The first directory is the `themes` subdirectory of your Ghostty
-/// configuration directory. This is `$XDG_CONFIG_HOME/ghostty/themes` or
-/// `~/.config/ghostty/themes`.
+/// configuration directory. This is `$XDG_CONFIG_HOME/geofftty/themes` or
+/// `~/.config/geofftty/themes`.
 ///
 /// The second directory is the `themes` subdirectory of the Ghostty resources
 /// directory. Ghostty ships with a multitude of themes that will be installed
@@ -2356,7 +2356,7 @@ keybind: Keybinds = .{},
 
 /// When this is true, the default configuration file paths will be loaded.
 /// The default configuration file paths are currently only the XDG
-/// config path ($XDG_CONFIG_HOME/ghostty/config.ghostty).
+/// config path ($XDG_CONFIG_HOME/geofftty/config.ghostty).
 ///
 /// If this is false, the default configuration paths will not be loaded.
 /// This is targeted directly at using Ghostty from the CLI in a way
@@ -3424,7 +3424,7 @@ keybind: Keybinds = .{},
 /// The absolute path to the custom icon file.
 /// Supported formats include PNG, JPEG, and ICNS.
 ///
-/// Defaults to `~/.config/ghostty/Ghostty.icns`
+/// Defaults to `~/.config/geofftty/Ghostty.icns`
 @"macos-custom-icon": ?[:0]const u8 = null,
 
 /// The material to use for the frame of the macOS app icon.
@@ -3922,7 +3922,7 @@ test "handle bom in config files" {
         try cfg.loadReader(
             alloc,
             &reader,
-            "/home/ghostty/.config/ghostty/config.ghostty",
+            "/home/ghostty/.config/geofftty/config.ghostty",
         );
         try cfg.finalize();
 
@@ -3941,7 +3941,7 @@ test "handle bom in config files" {
         try cfg.loadReader(
             alloc,
             &reader,
-            "/home/ghostty/.config/ghostty/config.ghostty",
+            "/home/ghostty/.config/geofftty/config.ghostty",
         );
         try cfg.finalize();
 
@@ -3995,7 +3995,7 @@ fn writeConfigTemplate(path: []const u8) !void {
 }
 
 /// Load configurations from the default configuration files. The default
-/// configuration file is at `$XDG_CONFIG_HOME/ghostty/config.ghostty`.
+/// configuration file is at `$XDG_CONFIG_HOME/geofftty/config.ghostty`.
 ///
 /// On macOS, `$HOME/Library/Application Support/$CFBundleIdentifier/`
 /// is also loaded.

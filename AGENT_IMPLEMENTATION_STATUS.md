@@ -183,7 +183,7 @@
 ## Configuration Example
 
 ```ini
-# ~/.config/ghostty/config
+# ~/.config/geofftty/config
 
 # Enable AI agent
 ai-agent-enabled = true

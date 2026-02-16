@@ -28,7 +28,7 @@ pub const Error = error{ CacheIsLocked, HostnameIsInvalid };
 
 /// Returns the default path for the cache for a given program.
 ///
-/// On all platforms, this is `${XDG_STATE_HOME}/ghostty/ssh_cache`.
+/// On all platforms, this is `${XDG_STATE_HOME}/geofftty/ssh_cache`.
 ///
 /// The returned value is allocated and must be freed by the caller.
 pub fn defaultPath(
@@ -372,7 +372,7 @@ test "disk cache default path" {
     const testing = std.testing;
     const alloc = std.testing.allocator;
 
-    const path = try DiskCache.defaultPath(alloc, "ghostty");
+    const path = try DiskCache.defaultPath(alloc, "geofftty");
     defer alloc.free(path);
     try testing.expect(path.len > 0);
 }

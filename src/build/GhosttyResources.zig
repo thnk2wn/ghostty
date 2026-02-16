@@ -228,7 +228,7 @@ pub fn init(b: *std.Build, cfg: *const Config, deps: *const SharedDeps) !Ghostty
     // 'ghostty.sublime-syntax' file from zig-out to the '~.config/bat/syntaxes'
     // directory. The syntax then needs to be mapped to the correct language in
     // the config file within the '~.config/bat' directory
-    // (ex: --map-syntax "/Users/user/.config/ghostty/config.ghostty:Ghostty Config").
+    // (ex: --map-syntax "/Users/user/.config/geofftty/config.ghostty:Ghostty Config").
     {
         const run = b.addRunArtifact(build_data_exe);
         run.addArg("+sublime");
